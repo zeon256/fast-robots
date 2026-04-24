@@ -4,6 +4,9 @@ use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_m
 use fast_robots::RobotsTxt;
 use robotstxt::DefaultMatcher;
 
+#[global_allocator]
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
 struct Fixture {
     name: &'static str,
     input: String,
