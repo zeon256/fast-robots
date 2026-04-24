@@ -1,6 +1,6 @@
 # Benchmarks
 
-This document records the current `fast-robots` benchmark results and the environment they were captured on.
+This document records the current `fast-robots` benchmark results after the fallible parsing and diagnostics changes, along with the environment they were captured on.
 
 The benchmark source lives in [`benches/robots.rs`](benches/robots.rs). The implementation under test is mostly in [`src/lib.rs`](src/lib.rs), with crate metadata in [`Cargo.toml`](Cargo.toml) and user-facing docs in [`README.md`](README.md).
 
@@ -23,19 +23,19 @@ Command:
 RUSTFLAGS='-C target-cpu=native' cargo bench --bench robots
 ```
 
-These results were captured before the package rename from `robots-simd` to `fast-robots`; the benchmark labels in the raw Criterion output used `robots-simd`. The benchmark target now emits `fast-robots` labels for the same implementation.
+These results were captured after the package rename, so Criterion labels use `fast-robots`.
 
 ## Parse Throughput
 
 | Benchmark | Median Time | Throughput |
 |-----------|-------------|------------|
-| `parse/fast-robots/tiny` | 122.61 ns | 264.47 MiB/s |
-| `parse/fast-robots/common` | 516.13 ns | 543.23 MiB/s |
-| `parse/fast-robots/many_groups` | 111.92 us | 679.61 MiB/s |
-| `parse/fast-robots/many_rules` | 57.770 us | 1.0185 GiB/s |
-| `parse/fast-robots/wildcard_heavy` | 39.014 us | 1.7156 GiB/s |
-| `parse/fast-robots/extension_heavy` | 98.638 us | 1.0315 GiB/s |
-| `parse/fast-robots/large_500k` | 948.81 us | 527.05 MiB/s |
+| `parse/fast-robots/tiny` | 129.80 ns | 249.81 MiB/s |
+| `parse/fast-robots/common` | 544.96 ns | 514.50 MiB/s |
+| `parse/fast-robots/many_groups` | 118.93 us | 639.51 MiB/s |
+| `parse/fast-robots/many_rules` | 59.122 us | 1019.1 MiB/s |
+| `parse/fast-robots/wildcard_heavy` | 40.218 us | 1.6642 GiB/s |
+| `parse/fast-robots/extension_heavy` | 99.977 us | 1.0177 GiB/s |
+| `parse/fast-robots/large_500k` | 976.38 us | 512.16 MiB/s |
 
 ## Match Throughput
 
@@ -43,8 +43,8 @@ These benchmarks parse once, then repeatedly call `RobotsTxt::is_allowed()` over
 
 | Benchmark | Median Time | Throughput |
 |-----------|-------------|------------|
-| `match/fast-robots/many_rules` | 79.781 us | 75.206 Kelem/s |
-| `match/fast-robots/wildcard_heavy` | 131.08 us | 45.775 Kelem/s |
+| `match/fast-robots/many_rules` | 80.082 us | 74.924 Kelem/s |
+| `match/fast-robots/wildcard_heavy` | 130.93 us | 45.827 Kelem/s |
 
 ## Parse + Match Comparison
 
@@ -54,23 +54,23 @@ This is an API-level comparison, not a claim that the two crates have identical 
 
 | Fixture | `fast-robots` Median | `robotstxt` Median | Speedup |
 |---------|----------------------|---------------------|---------|
-| tiny | 132.88 ns | 516.14 ns | 3.9x |
-| common | 539.32 ns | 3.6445 us | 6.8x |
-| many_rules | 76.952 us | 918.74 us | 11.9x |
-| large_500k | 958.84 us | 7.5167 ms | 7.8x |
+| tiny | 142.50 ns | 513.08 ns | 3.6x |
+| common | 574.48 ns | 3.6392 us | 6.3x |
+| many_rules | 78.762 us | 915.42 us | 11.6x |
+| large_500k | 982.88 us | 7.5116 ms | 7.6x |
 
 Detailed results:
 
 | Benchmark | Median Time | Throughput |
 |-----------|-------------|------------|
-| `parse_match/fast-robots/tiny` | 132.88 ns | 244.02 MiB/s |
-| `parse_match/robotstxt-google-port/tiny` | 516.14 ns | 62.822 MiB/s |
-| `parse_match/fast-robots/common` | 539.32 ns | 519.88 MiB/s |
-| `parse_match/robotstxt-google-port/common` | 3.6445 us | 76.932 MiB/s |
-| `parse_match/fast-robots/many_rules` | 76.952 us | 782.98 MiB/s |
-| `parse_match/robotstxt-google-port/many_rules` | 918.74 us | 65.581 MiB/s |
-| `parse_match/fast-robots/large_500k` | 958.84 us | 521.54 MiB/s |
-| `parse_match/robotstxt-google-port/large_500k` | 7.5167 ms | 66.528 MiB/s |
+| `parse_match/fast-robots/tiny` | 142.50 ns | 227.55 MiB/s |
+| `parse_match/robotstxt-google-port/tiny` | 513.08 ns | 63.197 MiB/s |
+| `parse_match/fast-robots/common` | 574.48 ns | 488.06 MiB/s |
+| `parse_match/robotstxt-google-port/common` | 3.6392 us | 77.044 MiB/s |
+| `parse_match/fast-robots/many_rules` | 78.762 us | 764.98 MiB/s |
+| `parse_match/robotstxt-google-port/many_rules` | 915.42 us | 65.818 MiB/s |
+| `parse_match/fast-robots/large_500k` | 982.88 us | 508.78 MiB/s |
+| `parse_match/robotstxt-google-port/large_500k` | 7.5116 ms | 66.573 MiB/s |
 
 ## Notes
 
