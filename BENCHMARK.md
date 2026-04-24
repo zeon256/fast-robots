@@ -93,3 +93,36 @@ Run a quick sanity check:
 ```bash
 RUSTFLAGS='-C target-cpu=native' cargo bench --bench robots -- --sample-size 10 --warm-up-time 0.1 --measurement-time 0.2
 ```
+
+## Flamegraph Profiling
+
+Use [`cargo-flamegraph`](https://github.com/flamegraph-rs/flamegraph) against the focused profiling example instead of the full Criterion suite.
+
+Install once:
+
+```bash
+cargo install flamegraph
+```
+
+Build/profile with native CPU tuning, frame pointers, and release debug symbols:
+
+```bash
+CARGO_PROFILE_RELEASE_DEBUG=true RUSTFLAGS='-C target-cpu=native -C force-frame-pointers=yes' cargo flamegraph --example profile -- parse-common
+```
+
+Useful workloads:
+
+```bash
+CARGO_PROFILE_RELEASE_DEBUG=true RUSTFLAGS='-C target-cpu=native -C force-frame-pointers=yes' cargo flamegraph --example profile -- parse-tiny
+CARGO_PROFILE_RELEASE_DEBUG=true RUSTFLAGS='-C target-cpu=native -C force-frame-pointers=yes' cargo flamegraph --example profile -- parse-common
+CARGO_PROFILE_RELEASE_DEBUG=true RUSTFLAGS='-C target-cpu=native -C force-frame-pointers=yes' cargo flamegraph --example profile -- parse-many-groups
+CARGO_PROFILE_RELEASE_DEBUG=true RUSTFLAGS='-C target-cpu=native -C force-frame-pointers=yes' cargo flamegraph --example profile -- parse-large
+CARGO_PROFILE_RELEASE_DEBUG=true RUSTFLAGS='-C target-cpu=native -C force-frame-pointers=yes' cargo flamegraph --example profile -- match-many-rules
+CARGO_PROFILE_RELEASE_DEBUG=true RUSTFLAGS='-C target-cpu=native -C force-frame-pointers=yes' cargo flamegraph --example profile -- parse-match-common
+```
+
+On macOS, `cargo flamegraph` may require elevated DTrace permissions. If needed, preserve the environment with `sudo -E env`:
+
+```bash
+sudo -E env CARGO_PROFILE_RELEASE_DEBUG=true RUSTFLAGS='-C target-cpu=native -C force-frame-pointers=yes' cargo flamegraph --example profile -- parse-common
+```
