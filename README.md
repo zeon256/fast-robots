@@ -280,7 +280,7 @@ cargo bench --bench robots -- --sample-size 10 --warm-up-time 0.1 --measurement-
 ## Caveats
 
 - **Not an authorization system**: `robots.txt` is a crawler cooperation protocol, not access control.
-- **Input is `&str` today**: the current API assumes UTF-8 input. A future `parse_bytes(&[u8])` API can handle invalid encoding explicitly.
+- **UTF-8 required**: `parse_bytes` methods validate UTF-8 and return a `ParseError` for invalid encoding. Non-UTF-8 encodings (e.g., Latin-1, Windows-1252) are not supported.
 - **No URI percent-normalization yet**: RFC 9309 has specific percent-encoding comparison rules. The current matcher focuses on path pattern semantics and should grow a normalization layer before claiming full crawler equivalence.
 - **Extensions vary by crawler**: Google ignores `Crawl-delay`; Bing honors it; other crawlers differ. This crate stores extension metadata but does not enforce crawl scheduling.
 - **SIMD is delegated**: `memchr` selects optimized implementations where supported and falls back safely elsewhere.
