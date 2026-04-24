@@ -1,4 +1,49 @@
 use memchr::{memchr, memmem};
+use thiserror::Error;
+
+pub const DEFAULT_MAX_BYTES: usize = 512 * 1024;
+
+#[derive(Debug, Error)]
+pub enum ParseError {
+    #[error("robots.txt is not valid UTF-8")]
+    Utf8(#[from] std::str::Utf8Error),
+
+    #[error("robots.txt is too large: {len} bytes exceeds limit of {max} bytes")]
+    TooLarge { len: usize, max: usize },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ParseOptions {
+    pub max_bytes: Option<usize>,
+}
+
+impl Default for ParseOptions {
+    fn default() -> Self {
+        Self {
+            max_bytes: Some(DEFAULT_MAX_BYTES),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ParseReport<'a> {
+    pub robots: RobotsTxt<'a>,
+    pub warnings: Vec<ParseWarning<'a>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ParseWarning<'a> {
+    pub line: usize,
+    pub kind: ParseWarningKind<'a>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ParseWarningKind<'a> {
+    MissingSeparator { line: &'a str },
+    EmptyDirectiveKey,
+    EmptyUserAgent,
+    RuleBeforeUserAgent { key: &'a str },
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RobotsTxt<'a> {
@@ -57,77 +102,50 @@ pub struct Directive<'a> {
 
 impl<'a> RobotsTxt<'a> {
     pub fn parse(input: &'a str) -> Self {
-        let mut groups = vec![];
-        let mut current: Option<Group<'a>> = None;
-        let mut current_has_rules = false;
+        parse_inner(input, false).robots
+    }
 
-        #[cfg(feature = "extensions")]
-        let mut extensions = Extensions::default();
+    pub fn parse_bytes(input: &'a [u8]) -> Result<Self, ParseError> {
+        Self::parse_bytes_with_options(input, ParseOptions::default())
+    }
 
-        for line in Lines::new(input) {
-            let line = trim_ascii(strip_comment(line));
-            if line.is_empty() {
-                continue;
-            }
+    pub fn parse_bytes_with_options(
+        input: &'a [u8],
+        options: ParseOptions,
+    ) -> Result<Self, ParseError> {
+        check_size(input.len(), options)?;
+        let input = std::str::from_utf8(input)?;
+        Ok(Self::parse(input))
+    }
 
-            let Some((key, value)) = split_directive(line) else {
-                continue;
-            };
+    pub fn parse_with_options(input: &'a str, options: ParseOptions) -> Result<Self, ParseError> {
+        check_size(input.len(), options)?;
+        Ok(Self::parse(input))
+    }
 
-            let key = trim_ascii(key);
-            let value = trim_ascii(value);
+    pub fn parse_with_diagnostics(input: &'a str) -> ParseReport<'a> {
+        parse_inner(input, true)
+    }
 
-            if key.eq_ignore_ascii_case("user-agent") {
-                if value.is_empty() {
-                    continue;
-                }
+    pub fn parse_with_diagnostics_options(
+        input: &'a str,
+        options: ParseOptions,
+    ) -> Result<ParseReport<'a>, ParseError> {
+        check_size(input.len(), options)?;
+        Ok(parse_inner(input, true))
+    }
 
-                match current.as_mut() {
-                    Some(group) if !current_has_rules => group.agents.push(value),
-                    Some(_) => {
-                        groups.push(current.take().expect("current group exists"));
-                        current = Some(Group {
-                            agents: vec![value],
-                            rules: vec![],
-                        });
-                        current_has_rules = false;
-                    }
-                    None => {
-                        current = Some(Group {
-                            agents: vec![value],
-                            rules: vec![],
-                        });
-                    }
-                }
-            } else if key.eq_ignore_ascii_case("allow") || key.eq_ignore_ascii_case("disallow") {
-                let Some(group) = current.as_mut() else {
-                    continue;
-                };
-                let kind = if key.eq_ignore_ascii_case("allow") {
-                    RuleKind::Allow
-                } else {
-                    RuleKind::Disallow
-                };
-                group.rules.push(Rule {
-                    kind,
-                    pattern: value,
-                });
-                current_has_rules = true;
-            } else {
-                #[cfg(feature = "extensions")]
-                collect_extension(&mut extensions, current.as_ref(), key, value);
-            }
-        }
+    pub fn parse_bytes_with_diagnostics(input: &'a [u8]) -> Result<ParseReport<'a>, ParseError> {
+        Self::parse_bytes_with_diagnostics_options(input, ParseOptions::default())
+    }
 
-        if let Some(group) = current {
-            groups.push(group);
-        }
-
-        Self {
-            groups,
-            #[cfg(feature = "extensions")]
-            extensions,
-        }
+    pub fn parse_bytes_with_diagnostics_options(
+        input: &'a [u8],
+        options: ParseOptions,
+    ) -> Result<ParseReport<'a>, ParseError> {
+        check_size(input.len(), options)?;
+        let input = std::str::from_utf8(input)?;
+        Ok(parse_inner(input, true))
     }
 
     pub fn is_allowed(&self, user_agent: &str, path: &str) -> bool {
@@ -161,6 +179,121 @@ impl<'a> RobotsTxt<'a> {
             Some((_, RuleKind::Allow)) | None => true,
             Some((_, RuleKind::Disallow)) => false,
         }
+    }
+}
+
+fn check_size(len: usize, options: ParseOptions) -> Result<(), ParseError> {
+    if let Some(max) = options.max_bytes {
+        if len > max {
+            return Err(ParseError::TooLarge { len, max });
+        }
+    }
+
+    Ok(())
+}
+
+fn parse_inner<'a>(input: &'a str, diagnostics: bool) -> ParseReport<'a> {
+    let mut groups = vec![];
+    let mut current: Option<Group<'a>> = None;
+    let mut current_has_rules = false;
+    let mut warnings = vec![];
+
+    #[cfg(feature = "extensions")]
+    let mut extensions = Extensions::default();
+
+    for (line_number, line) in Lines::new(input) {
+        let line = trim_ascii(strip_comment(line));
+        if line.is_empty() {
+            continue;
+        }
+
+        let Some((key, value)) = split_directive(line) else {
+            if diagnostics {
+                warnings.push(ParseWarning {
+                    line: line_number,
+                    kind: ParseWarningKind::MissingSeparator { line },
+                });
+            }
+            continue;
+        };
+
+        let key = trim_ascii(key);
+        let value = trim_ascii(value);
+        if key.is_empty() {
+            if diagnostics {
+                warnings.push(ParseWarning {
+                    line: line_number,
+                    kind: ParseWarningKind::EmptyDirectiveKey,
+                });
+            }
+            continue;
+        }
+
+        if key.eq_ignore_ascii_case("user-agent") {
+            if value.is_empty() {
+                if diagnostics {
+                    warnings.push(ParseWarning {
+                        line: line_number,
+                        kind: ParseWarningKind::EmptyUserAgent,
+                    });
+                }
+                continue;
+            };
+
+            match current.as_mut() {
+                Some(group) if !current_has_rules => group.agents.push(value),
+                Some(_) => {
+                    groups.push(current.take().expect("current group exists"));
+                    current = Some(Group {
+                        agents: vec![value],
+                        rules: vec![],
+                    });
+                    current_has_rules = false;
+                }
+                None => {
+                    current = Some(Group {
+                        agents: vec![value],
+                        rules: vec![],
+                    });
+                }
+            }
+        } else if key.eq_ignore_ascii_case("allow") || key.eq_ignore_ascii_case("disallow") {
+            let Some(group) = current.as_mut() else {
+                if diagnostics {
+                    warnings.push(ParseWarning {
+                        line: line_number,
+                        kind: ParseWarningKind::RuleBeforeUserAgent { key },
+                    });
+                }
+                continue;
+            };
+            let kind = if key.eq_ignore_ascii_case("allow") {
+                RuleKind::Allow
+            } else {
+                RuleKind::Disallow
+            };
+            group.rules.push(Rule {
+                kind,
+                pattern: value,
+            });
+            current_has_rules = true;
+        } else {
+            #[cfg(feature = "extensions")]
+            collect_extension(&mut extensions, current.as_ref(), key, value);
+        }
+    }
+
+    if let Some(group) = current {
+        groups.push(group);
+    }
+
+    ParseReport {
+        robots: RobotsTxt {
+            groups,
+            #[cfg(feature = "extensions")]
+            extensions,
+        },
+        warnings,
     }
 }
 
@@ -295,16 +428,21 @@ fn trim_ascii(value: &str) -> &str {
 struct Lines<'a> {
     input: &'a str,
     offset: usize,
+    line: usize,
 }
 
 impl<'a> Lines<'a> {
     fn new(input: &'a str) -> Self {
-        Self { input, offset: 0 }
+        Self {
+            input,
+            offset: 0,
+            line: 1,
+        }
     }
 }
 
 impl<'a> Iterator for Lines<'a> {
-    type Item = &'a str;
+    type Item = (usize, &'a str);
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.offset > self.input.len() {
@@ -323,8 +461,10 @@ impl<'a> Iterator for Lines<'a> {
             line = stripped;
         }
 
+        let line_number = self.line;
+        self.line += 1;
         self.offset += line_end + 1;
-        Some(line)
+        Some((line_number, line))
     }
 }
 
@@ -415,6 +555,66 @@ mod tests {
         let robots = RobotsTxt::parse("User-agent: *\nDisallow: /\n");
 
         assert!(robots.is_allowed("AnyBot", "/robots.txt"));
+    }
+
+    #[test]
+    fn parse_bytes_rejects_invalid_utf8() {
+        let error = RobotsTxt::parse_bytes(&[0xff]).expect_err("invalid UTF-8 should fail");
+
+        assert!(matches!(error, ParseError::Utf8(_)));
+    }
+
+    #[test]
+    fn parse_with_options_rejects_oversized_input() {
+        let error =
+            RobotsTxt::parse_with_options("User-agent: *\n", ParseOptions { max_bytes: Some(4) })
+                .expect_err("oversized input should fail");
+
+        assert!(matches!(error, ParseError::TooLarge { len: 14, max: 4 }));
+    }
+
+    #[test]
+    fn parse_with_options_allows_disabled_limit() {
+        let robots = RobotsTxt::parse_with_options(
+            "User-agent: *\nDisallow: /private\n",
+            ParseOptions { max_bytes: None },
+        )
+        .expect("disabled size limit should parse");
+
+        assert!(!robots.is_allowed("AnyBot", "/private"));
+    }
+
+    #[test]
+    fn diagnostics_report_soft_parse_issues() {
+        let report = RobotsTxt::parse_with_diagnostics(
+            "Disallow: /\nMissing separator\n: value\nUser-agent:\nUser-agent: *\nDisallow: /private\n",
+        );
+
+        assert_eq!(report.warnings.len(), 4);
+        assert_eq!(
+            report.warnings,
+            vec![
+                ParseWarning {
+                    line: 1,
+                    kind: ParseWarningKind::RuleBeforeUserAgent { key: "Disallow" },
+                },
+                ParseWarning {
+                    line: 2,
+                    kind: ParseWarningKind::MissingSeparator {
+                        line: "Missing separator",
+                    },
+                },
+                ParseWarning {
+                    line: 3,
+                    kind: ParseWarningKind::EmptyDirectiveKey,
+                },
+                ParseWarning {
+                    line: 4,
+                    kind: ParseWarningKind::EmptyUserAgent,
+                },
+            ]
+        );
+        assert!(!report.robots.is_allowed("AnyBot", "/private"));
     }
 
     #[cfg(feature = "extensions")]

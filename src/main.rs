@@ -1,7 +1,7 @@
 use std::{fs, process::ExitCode};
 
 use argh::FromArgs;
-use fast_robots::RobotsTxt;
+use fast_robots::{ParseError, RobotsTxt};
 
 /// parse and check robots.txt files.
 #[derive(Debug, FromArgs)]
@@ -57,9 +57,15 @@ fn parse(command: ParseCommand) -> ExitCode {
     let Some(input) = read_file(&command.file) else {
         return ExitCode::from(2);
     };
-    let robots = RobotsTxt::parse(&input);
+    let report = match RobotsTxt::parse_bytes_with_diagnostics(&input) {
+        Ok(report) => report,
+        Err(error) => return parse_error(&command.file, error),
+    };
 
-    println!("{robots:#?}");
+    println!("{:#?}", report.robots);
+    if !report.warnings.is_empty() {
+        eprintln!("warnings: {:#?}", report.warnings);
+    }
     ExitCode::SUCCESS
 }
 
@@ -67,7 +73,10 @@ fn check(command: CheckCommand) -> ExitCode {
     let Some(input) = read_file(&command.file) else {
         return ExitCode::from(2);
     };
-    let robots = RobotsTxt::parse(&input);
+    let robots = match RobotsTxt::parse_bytes(&input) {
+        Ok(robots) => robots,
+        Err(error) => return parse_error(&command.file, error),
+    };
     let allowed = robots.is_allowed(&command.agent, &command.path);
 
     println!("{}", if allowed { "allowed" } else { "disallowed" });
@@ -78,12 +87,17 @@ fn check(command: CheckCommand) -> ExitCode {
     }
 }
 
-fn read_file(path: &str) -> Option<String> {
-    match fs::read_to_string(path) {
+fn read_file(path: &str) -> Option<Vec<u8>> {
+    match fs::read(path) {
         Ok(input) => Some(input),
         Err(error) => {
             eprintln!("failed to read {path}: {error}");
             None
         }
     }
+}
+
+fn parse_error(path: &str, error: ParseError) -> ExitCode {
+    eprintln!("failed to parse {path}: {error}");
+    ExitCode::from(2)
 }

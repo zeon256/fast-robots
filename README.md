@@ -73,6 +73,52 @@ assert!(!robots.is_allowed("ExampleBot", "/private/file.html"));
 assert!(robots.is_allowed("ExampleBot", "/private/public/file.html"));
 ```
 
+### Fallible Parsing
+
+`RobotsTxt::parse(&str)` is intentionally tolerant and infallible. Malformed lines are ignored because crawlers are expected to use the parseable rules they can recover.
+
+Use the fallible byte APIs when reading untrusted files directly:
+
+```rust
+use fast_robots::{ParseOptions, RobotsTxt};
+
+let bytes = b"User-agent: *\nDisallow: /private\n";
+let robots = RobotsTxt::parse_bytes(bytes)?;
+
+assert!(!robots.is_allowed("ExampleBot", "/private"));
+
+let robots = RobotsTxt::parse_bytes_with_options(
+    bytes,
+    ParseOptions {
+        max_bytes: Some(512 * 1024),
+    },
+)?;
+
+assert!(!robots.is_allowed("ExampleBot", "/private"));
+# Ok::<(), fast_robots::ParseError>(())
+```
+
+Hard errors are reserved for conditions that prevent safe parsing, such as invalid UTF-8 or inputs over the configured size limit.
+
+### Diagnostics
+
+Use diagnostics when you want validator-style feedback without changing tolerant parser behavior:
+
+```rust
+use fast_robots::{ParseWarningKind, RobotsTxt};
+
+let report = RobotsTxt::parse_with_diagnostics(
+    "Disallow: /\nMissing separator\nUser-agent: *\nDisallow: /private\n",
+);
+
+assert_eq!(report.warnings.len(), 2);
+assert!(matches!(
+    report.warnings[0].kind,
+    ParseWarningKind::RuleBeforeUserAgent { .. }
+));
+assert!(!report.robots.is_allowed("ExampleBot", "/private"));
+```
+
 ### Extensions
 
 With the default `extensions` feature, non-core records are preserved as metadata:
