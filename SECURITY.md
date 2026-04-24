@@ -2,7 +2,7 @@
 
 ## Supported Versions
 
-Security fixes are provided for the latest published version of `robots-simd`.
+Security fixes are provided for the latest published version of `fast-robots`.
 
 Until the crate reaches `1.0`, compatibility may change between minor versions. Please test against the latest release before reporting an issue that may already be fixed.
 

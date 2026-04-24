@@ -58,7 +58,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "robots-simd"
+name = "fast-robots"
 version = "0.1.0"
 dependencies = [
  "argh",

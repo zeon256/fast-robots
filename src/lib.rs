@@ -57,9 +57,10 @@ pub struct Directive<'a> {
 
 impl<'a> RobotsTxt<'a> {
     pub fn parse(input: &'a str) -> Self {
-        let mut groups = Vec::new();
+        let mut groups = vec![];
         let mut current: Option<Group<'a>> = None;
         let mut current_has_rules = false;
+
         #[cfg(feature = "extensions")]
         let mut extensions = Extensions::default();
 
@@ -72,6 +73,7 @@ impl<'a> RobotsTxt<'a> {
             let Some((key, value)) = split_directive(line) else {
                 continue;
             };
+
             let key = trim_ascii(key);
             let value = trim_ascii(value);
 
@@ -86,14 +88,14 @@ impl<'a> RobotsTxt<'a> {
                         groups.push(current.take().expect("current group exists"));
                         current = Some(Group {
                             agents: vec![value],
-                            rules: Vec::new(),
+                            rules: vec![],
                         });
                         current_has_rules = false;
                     }
                     None => {
                         current = Some(Group {
                             agents: vec![value],
-                            rules: Vec::new(),
+                            rules: vec![],
                         });
                     }
                 }

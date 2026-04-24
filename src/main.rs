@@ -1,7 +1,7 @@
 use std::{fs, process::ExitCode};
 
 use argh::FromArgs;
-use robots_simd::RobotsTxt;
+use fast_robots::RobotsTxt;
 
 /// parse and check robots.txt files.
 #[derive(Debug, FromArgs)]

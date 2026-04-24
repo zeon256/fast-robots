@@ -1,11 +1,11 @@
 [package]
-name = "robots-simd"
+name = "fast-robots"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.85.1"
 license = "MIT OR Apache-2.0"
 description = "A zero-copy robots.txt parser with SIMD-accelerated byte scanning."
-documentation = "https://docs.rs/robots-simd"
+documentation = "https://docs.rs/fast-robots"
 readme = "README.md"
 keywords = ["robots", "robots-txt", "parser", "simd", "crawler"]
 categories = ["parser-implementations", "command-line-utilities"]

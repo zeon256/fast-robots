@@ -1,8 +1,8 @@
-# robots-simd
+# fast-robots
 
-[![Crates.io](https://img.shields.io/crates/v/robots-simd)](https://crates.io/crates/robots-simd)
-[![Crates.io Downloads](https://img.shields.io/crates/d/robots-simd)](https://crates.io/crates/robots-simd)
-[![Docs.rs](https://img.shields.io/docsrs/robots-simd)](https://docs.rs/robots-simd)
+[![Crates.io](https://img.shields.io/crates/v/fast-robots)](https://crates.io/crates/fast-robots)
+[![Crates.io Downloads](https://img.shields.io/crates/d/fast-robots)](https://crates.io/crates/fast-robots)
+[![Docs.rs](https://img.shields.io/docsrs/fast-robots)](https://docs.rs/fast-robots)
 [![License](https://img.shields.io/badge/license-Apache--2.0%2FMIT-blue)](#license)
 [![MSRV](https://img.shields.io/badge/MSRV-1.85.1-orange)](https://blog.rust-lang.org/2025/02/20/Rust-1.85.0/)
 [![Rust Edition](https://img.shields.io/badge/Rust-2024-blue)](https://doc.rust-lang.org/edition-guide/rust-2024/)
@@ -45,20 +45,20 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-robots-simd = "0.1.0"
+fast-robots = "0.1.0"
 ```
 
 The `extensions` feature is enabled by default:
 
 ```toml
 [dependencies]
-robots-simd = { version = "0.1.0", default-features = false }
+fast-robots = { version = "0.1.0", default-features = false }
 ```
 
 ## Usage
 
 ```rust
-use robots_simd::RobotsTxt;
+use fast_robots::RobotsTxt;
 
 let input = r#"
 User-agent: *
@@ -78,7 +78,7 @@ assert!(robots.is_allowed("ExampleBot", "/private/public/file.html"));
 With the default `extensions` feature, non-core records are preserved as metadata:
 
 ```rust
-use robots_simd::RobotsTxt;
+use fast_robots::RobotsTxt;
 
 let robots = RobotsTxt::parse(r#"
 Sitemap: https://example.com/sitemap.xml
@@ -141,7 +141,7 @@ Parser combinators can still be useful for more complex formats. Here they would
 
 ## Extension Semantics
 
-`robots-simd` treats extensions conservatively:
+`fast-robots` treats extensions conservatively:
 
 - `Sitemap`: global metadata; can appear anywhere.
 - `Crawl-delay`: stored with the current group agents when present.
@@ -195,20 +195,34 @@ cargo clippy --all-targets --all-features
 
 ## Benchmarks
 
-Benchmarks are not published yet. The first useful benchmark set should compare:
+Benchmarks use Criterion.rs and generated fixtures so large test data does not need to live in the repository. Current results are tracked in [BENCHMARK.md](BENCHMARK.md).
 
-| Parser | Workload | Goal |
-|--------|----------|------|
-| scalar manual | small files | baseline latency |
-| `memchr` manual | small files | delimiter scan overhead |
-| `memchr` manual | 500 KiB files | RFC parsing limit scale |
-| matcher | many rules | longest-match cost |
-| matcher | wildcard-heavy rules | `memmem` wildcard behavior |
+Current benchmark groups:
 
-Planned command:
+| Group | Workload | Goal |
+|-------|----------|------|
+| `parse` | tiny, common, many groups, many rules, wildcard-heavy, extension-heavy, 500 KiB | parser throughput |
+| `match` | many rules, wildcard-heavy | `is_allowed()` throughput after parsing once |
+| `parse_match` | tiny, common, many rules, 500 KiB | end-to-end parse plus access decision |
+
+The `parse_match` group compares `fast-robots` against `robotstxt`, the Rust port of Google's robots.txt parser and matcher. This is an API-level comparison, not a claim that the two crates currently have identical behavior for every edge case.
+
+Run all benchmarks:
 
 ```bash
 cargo bench
+```
+
+Run only this crate's benchmark target:
+
+```bash
+cargo bench --bench robots
+```
+
+Quick local sanity check with a smaller sample size:
+
+```bash
+cargo bench --bench robots -- --sample-size 10 --warm-up-time 0.1 --measurement-time 0.2
 ```
 
 ## Caveats
@@ -223,8 +237,8 @@ cargo bench
 
 | Mode | Cargo config | Use case |
 |------|--------------|----------|
-| Core + extensions | `robots-simd = "0.1"` | most applications that want sitemaps and metadata |
-| Core only | `robots-simd = { version = "0.1", default-features = false }` | strict RFC access checks with less metadata |
+| Core + extensions | `fast-robots = "0.1"` | most applications that want sitemaps and metadata |
+| Core only | `fast-robots = { version = "0.1", default-features = false }` | strict RFC access checks with less metadata |
 
 ## Security
 
