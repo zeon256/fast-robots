@@ -11,6 +11,12 @@
 
 A zero-copy `robots.txt` parser for Rust with SIMD-accelerated byte scanning, RFC 9309 access checks, feature-gated extension metadata, and a tiny `argh` CLI.
 
+<p align="center">
+  <img src="assets/logo.png" alt="fast-robots logo" width="300">
+  <br>
+  <sub><i>Disclaimer: I can't design. This logo was generated using ChatGPT.</i></sub>
+</p>
+
 ## Motivation
 
 `robots.txt` is line-oriented and byte-oriented. That makes a hand-rolled parser a better fit than a big parser-combinator stack: fewer allocations, direct control over error recovery, and the hot path stays obvious.
