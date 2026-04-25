@@ -5,6 +5,7 @@ edition = "2024"
 rust-version = "1.85.1"
 license = "MIT OR Apache-2.0"
 description = "A zero-copy robots.txt parser with SIMD-accelerated byte scanning."
+repository = "https://github.com/zeon256/fast-robots"
 documentation = "https://docs.rs/fast-robots"
 readme = "README.md"
 keywords = ["robots", "robots-txt", "parser", "simd", "crawler"]
