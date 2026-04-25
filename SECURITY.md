@@ -38,3 +38,10 @@ Issues generally not considered vulnerabilities by themselves:
 ## Disclosure
 
 Accepted vulnerabilities will be fixed in a patch release when possible. Public disclosure should include the affected versions, fixed versions, impact, and suggested mitigation.
+
+## Build & Supply Chain Hardening
+
+This project uses the following hardening techniques:
+
+- **Trusted Publishing**: crates.io releases are published via GitHub Actions OIDC, eliminating the need for long-lived API tokens.
+- **Pinned SHA**: all GitHub Actions dependencies reference specific commit SHAs rather than mutable version tags, mitigating supply chain attacks.
