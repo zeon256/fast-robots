@@ -46,7 +46,7 @@
 //! from. Use diagnostics when you want validator-style warnings alongside the
 //! parsed rules.
 //!
-//! ```
+//! ```rust
 //! use fast_robots::{ParseWarningKind, RobotsTxt};
 //!
 //! let report = RobotsTxt::parse_with_diagnostics(
@@ -70,7 +70,7 @@
 //! and `Crawl-delay` are preserved as metadata. Extension metadata never changes
 //! [`RobotsTxt::is_allowed`] decisions.
 //!
-//! ```
+//! ```rust
 //! # #[cfg(feature = "extensions")]
 //! # {
 //! use fast_robots::RobotsTxt;
