@@ -10,7 +10,7 @@
 A zero-copy `robots.txt` parser for Rust with SIMD-accelerated byte scanning, RFC 9309 access checks, feature-gated extension metadata, and a tiny `argh` CLI.
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/zeon256/fast-robots/HEAD/assets/logo.png" alt="fast-robots logo" width="300">
+  <img src="logo.png" alt="fast-robots logo" width="300">
   <br>
   <sub><i>Disclaimer: I can't design. This logo was generated using ChatGPT.</i></sub>
 </p>
