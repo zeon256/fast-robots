@@ -210,39 +210,6 @@ cargo test --no-default-features
 cargo clippy --all-targets --all-features
 ```
 
-## Verification
-
-<details>
-<summary>Quick Checks (click to expand)</summary>
-
-### Parse and inspect a file
-
-```bash
-cargo run -- parse robots.txt
-```
-
-### Check an allow/disallow decision
-
-```bash
-cargo run -- check robots.txt --agent ExampleBot --path /admin/
-```
-
-### Verify the extension gate
-
-```bash
-cargo test
-cargo test --no-default-features
-```
-
-### Verify lint cleanliness
-
-```bash
-cargo fmt --check
-cargo clippy --all-targets --all-features
-```
-
-</details>
-
 ## Benchmarks
 
 Benchmarks use Criterion.rs and generated fixtures so large test data does not need to live in the repository. Current results are tracked in [BENCHMARK.md](BENCHMARK.md).
