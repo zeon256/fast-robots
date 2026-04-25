@@ -6,8 +6,6 @@
 [![License](https://img.shields.io/badge/license-Apache--2.0%2FMIT-blue)](#license)
 [![MSRV](https://img.shields.io/badge/MSRV-1.85.1-orange)](https://blog.rust-lang.org/2025/02/20/Rust-1.85.0/)
 [![Rust Edition](https://img.shields.io/badge/Rust-2024-blue)](https://doc.rust-lang.org/edition-guide/rust-2024/)
-[![SIMD](https://img.shields.io/badge/SIMD-memchr-success)](https://docs.rs/memchr)
-[![CLI](https://img.shields.io/badge/CLI-argh-informational)](https://github.com/google/argh)
 
 A zero-copy `robots.txt` parser for Rust with SIMD-accelerated byte scanning, RFC 9309 access checks, feature-gated extension metadata, and a tiny `argh` CLI.
 
