@@ -88,6 +88,8 @@
 //! # }
 //! ```
 
+use std::collections::HashMap;
+
 use memchr::{memchr, memmem};
 use thiserror::Error;
 
@@ -252,6 +254,28 @@ pub enum RuleKind {
     Allow,
     /// A `Disallow` directive.
     Disallow,
+}
+
+/// Precompiled matcher for repeated access checks against one [`RobotsTxt`].
+///
+/// Build this with [`RobotsTxt::matcher`] when checking many paths against the
+/// same parsed file. Construction allocates an index and precomputes rule
+/// metadata, so [`RobotsTxt::is_allowed`] remains the lower-overhead option for
+/// one-off checks.
+#[derive(Debug, Clone)]
+pub struct RobotsMatcher<'a> {
+    agent_groups: HashMap<String, Vec<usize>>,
+    fallback_groups: Vec<usize>,
+    compiled_rules: Vec<Vec<CompiledRule<'a>>>,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct CompiledRule<'a> {
+    kind: RuleKind,
+    pattern: &'a str,
+    anchored: bool,
+    has_wildcard: bool,
+    specificity: usize,
 }
 
 /// Feature-gated metadata for common non-standard directives.
@@ -519,6 +543,28 @@ impl<'a> RobotsTxt<'a> {
         Ok(parse_inner(input, true))
     }
 
+    /// Builds an indexed matcher for repeated access checks.
+    ///
+    /// The returned matcher borrows this parsed file, indexes user-agent groups,
+    /// and precomputes rule metadata. Use it when checking many URLs against the
+    /// same `robots.txt`; for one-off checks, [`RobotsTxt::is_allowed`] avoids
+    /// the upfront allocation cost.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use fast_robots::RobotsTxt;
+    ///
+    /// let robots = RobotsTxt::parse("User-agent: *\nDisallow: /private\n");
+    /// let matcher = robots.matcher();
+    ///
+    /// assert!(!matcher.is_allowed("ExampleBot", "/private/file"));
+    /// assert!(matcher.is_allowed("ExampleBot", "/public/file"));
+    /// ```
+    pub fn matcher(&'a self) -> RobotsMatcher<'a> {
+        RobotsMatcher::new(self)
+    }
+
     /// Returns whether `user_agent` may crawl `path`.
     ///
     /// The matcher implements the core RFC 9309 access semantics used by this
@@ -570,10 +616,100 @@ impl<'a> RobotsTxt<'a> {
             }
         }
 
-        match best {
-            Some((_, RuleKind::Allow)) | None => true,
-            Some((_, RuleKind::Disallow)) => false,
+        rule_decision(best)
+    }
+}
+
+impl<'a> RobotsMatcher<'a> {
+    fn new(robots: &'a RobotsTxt<'a>) -> Self {
+        let groups = robots.groups.as_slice();
+        let mut agent_groups: HashMap<String, Vec<usize>> = HashMap::new();
+        let mut fallback_groups = Vec::new();
+        let mut compiled_rules = Vec::with_capacity(groups.len());
+
+        for (group_index, group) in groups.iter().enumerate() {
+            for agent in &group.agents {
+                if *agent == "*" {
+                    fallback_groups.push(group_index);
+                } else {
+                    let indexes = agent_groups.entry(agent.to_ascii_lowercase()).or_default();
+                    if !indexes.contains(&group_index) {
+                        indexes.push(group_index);
+                    }
+                }
+            }
+
+            compiled_rules.push(group.rules.iter().filter_map(CompiledRule::new).collect());
         }
+
+        Self {
+            agent_groups,
+            fallback_groups,
+            compiled_rules,
+        }
+    }
+
+    /// Returns whether `user_agent` may crawl `path` using the prebuilt index.
+    ///
+    /// This has the same access semantics as [`RobotsTxt::is_allowed`], including
+    /// exact user-agent precedence over `*`, merged exact groups, longest-match
+    /// rule selection, `Allow` tie wins, and implicit allowance for `/robots.txt`.
+    pub fn is_allowed(&self, user_agent: &str, path: &str) -> bool {
+        if path == "/robots.txt" {
+            return true;
+        }
+
+        let mut best: Option<(usize, RuleKind)> = None;
+        let agent = user_agent.to_ascii_lowercase();
+
+        if let Some(group_indexes) = self.agent_groups.get(&agent) {
+            self.apply_group_indexes(group_indexes, path, &mut best);
+        } else {
+            self.apply_group_indexes(&self.fallback_groups, path, &mut best);
+        }
+
+        rule_decision(best)
+    }
+
+    fn apply_group_indexes(
+        &self,
+        group_indexes: &[usize],
+        path: &str,
+        best: &mut Option<(usize, RuleKind)>,
+    ) {
+        for &group_index in group_indexes {
+            apply_compiled_rules(&self.compiled_rules[group_index], path, best);
+        }
+    }
+}
+
+impl<'a> CompiledRule<'a> {
+    fn new(rule: &Rule<'a>) -> Option<Self> {
+        if rule.pattern.is_empty() {
+            return None;
+        }
+
+        let (pattern, anchored) = strip_end_anchor(rule.pattern);
+
+        Some(Self {
+            kind: rule.kind,
+            pattern,
+            anchored,
+            has_wildcard: pattern.as_bytes().contains(&b'*'),
+            specificity: pattern.len(),
+        })
+    }
+
+    fn matching_specificity(self, path: &str) -> Option<usize> {
+        let matched = if self.has_wildcard {
+            glob_matches(self.pattern.as_bytes(), path.as_bytes(), self.anchored)
+        } else if self.anchored {
+            path == self.pattern
+        } else {
+            path.starts_with(self.pattern)
+        };
+
+        matched.then_some(self.specificity)
     }
 }
 
@@ -586,6 +722,46 @@ fn check_size(len: usize, options: ParseOptions) -> Result<(), ParseError> {
     }
 
     Ok(())
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DirectiveKind {
+    UserAgent,
+    Allow,
+    Disallow,
+    #[cfg(feature = "extensions")]
+    Sitemap,
+    #[cfg(feature = "extensions")]
+    CrawlDelay,
+    #[cfg(feature = "extensions")]
+    Host,
+    #[cfg(feature = "extensions")]
+    CleanParam,
+    Other,
+}
+
+fn classify_directive_key(key: &str) -> DirectiveKind {
+    match key.len() {
+        5 if key.eq_ignore_ascii_case("allow") => DirectiveKind::Allow,
+        8 if key.eq_ignore_ascii_case("disallow") => DirectiveKind::Disallow,
+        10 if key.eq_ignore_ascii_case("user-agent") => DirectiveKind::UserAgent,
+        #[cfg(feature = "extensions")]
+        4 if key.eq_ignore_ascii_case("host") => DirectiveKind::Host,
+        #[cfg(feature = "extensions")]
+        7 if key.eq_ignore_ascii_case("sitemap") => DirectiveKind::Sitemap,
+        #[cfg(feature = "extensions")]
+        11 if key.eq_ignore_ascii_case("crawl-delay") => DirectiveKind::CrawlDelay,
+        #[cfg(feature = "extensions")]
+        11 if key.eq_ignore_ascii_case("clean-param") => DirectiveKind::CleanParam,
+        _ => DirectiveKind::Other,
+    }
+}
+
+fn new_group<'a>(agent: &'a str) -> Group<'a> {
+    Group {
+        agents: vec![agent],
+        rules: Vec::with_capacity(4),
+    }
 }
 
 /// Shared parser implementation for tolerant and diagnostics-enabled parsing.
@@ -630,57 +806,59 @@ fn parse_inner<'a>(input: &'a str, diagnostics: bool) -> ParseReport<'a> {
             continue;
         }
 
-        if key.eq_ignore_ascii_case("user-agent") {
-            if value.is_empty() {
-                if diagnostics {
-                    warnings.push(ParseWarning {
-                        line: line_number,
-                        kind: ParseWarningKind::EmptyUserAgent,
-                    });
-                }
-                continue;
-            };
+        let directive = classify_directive_key(key);
 
-            match current.as_mut() {
-                Some(group) if !current_has_rules => group.agents.push(value),
-                Some(_) => {
-                    groups.push(current.take().expect("current group exists"));
-                    current = Some(Group {
-                        agents: vec![value],
-                        rules: vec![],
-                    });
-                    current_has_rules = false;
-                }
-                None => {
-                    current = Some(Group {
-                        agents: vec![value],
-                        rules: vec![],
-                    });
+        match directive {
+            DirectiveKind::UserAgent => {
+                if value.is_empty() {
+                    if diagnostics {
+                        warnings.push(ParseWarning {
+                            line: line_number,
+                            kind: ParseWarningKind::EmptyUserAgent,
+                        });
+                    }
+                    continue;
+                };
+
+                match current.as_mut() {
+                    Some(group) if !current_has_rules => group.agents.push(value),
+                    Some(_) => {
+                        groups.push(current.take().expect("current group exists"));
+                        current = Some(new_group(value));
+                        current_has_rules = false;
+                    }
+                    None => {
+                        current = Some(new_group(value));
+                    }
                 }
             }
-        } else if key.eq_ignore_ascii_case("allow") || key.eq_ignore_ascii_case("disallow") {
-            let Some(group) = current.as_mut() else {
-                if diagnostics {
-                    warnings.push(ParseWarning {
-                        line: line_number,
-                        kind: ParseWarningKind::RuleBeforeUserAgent { key },
-                    });
-                }
-                continue;
-            };
-            let kind = if key.eq_ignore_ascii_case("allow") {
-                RuleKind::Allow
-            } else {
-                RuleKind::Disallow
-            };
-            group.rules.push(Rule {
-                kind,
-                pattern: value,
-            });
-            current_has_rules = true;
-        } else {
-            #[cfg(feature = "extensions")]
-            collect_extension(&mut extensions, current.as_ref(), key, value);
+            DirectiveKind::Allow | DirectiveKind::Disallow => {
+                let Some(group) = current.as_mut() else {
+                    if diagnostics {
+                        warnings.push(ParseWarning {
+                            line: line_number,
+                            kind: ParseWarningKind::RuleBeforeUserAgent { key },
+                        });
+                    }
+                    continue;
+                };
+
+                let kind = match directive {
+                    DirectiveKind::Allow => RuleKind::Allow,
+                    DirectiveKind::Disallow => RuleKind::Disallow,
+                    _ => unreachable!("only allow/disallow directives reach this branch"),
+                };
+
+                group.rules.push(Rule {
+                    kind,
+                    pattern: value,
+                });
+                current_has_rules = true;
+            }
+            _ => {
+                #[cfg(feature = "extensions")]
+                collect_extension(&mut extensions, current.as_ref(), directive, key, value);
+            }
         }
     }
 
@@ -705,43 +883,69 @@ fn parse_inner<'a>(input: &'a str, diagnostics: bool) -> ParseReport<'a> {
 /// replaces `Disallow` on ties.
 fn apply_group_rules(group: &Group<'_>, path: &str, best: &mut Option<(usize, RuleKind)>) {
     for rule in &group.rules {
-        if rule.pattern.is_empty() || !pattern_matches(rule.pattern, path) {
+        let Some(specificity) = matching_specificity(rule.pattern, path) else {
             continue;
-        }
+        };
 
-        let specificity = pattern_specificity(rule.pattern);
-        match *best {
-            Some((best_specificity, best_kind))
-                if specificity < best_specificity
-                    || (specificity == best_specificity
-                        && !(rule.kind == RuleKind::Allow && best_kind == RuleKind::Disallow)) =>
-            {
-                continue;
-            }
-            _ => *best = Some((specificity, rule.kind)),
-        }
+        apply_rule_decision(specificity, rule.kind, best);
     }
 }
 
-/// Returns whether a robots rule pattern matches a path.
+fn apply_compiled_rules(
+    rules: &[CompiledRule<'_>],
+    path: &str,
+    best: &mut Option<(usize, RuleKind)>,
+) {
+    for rule in rules {
+        let Some(specificity) = rule.matching_specificity(path) else {
+            continue;
+        };
+
+        apply_rule_decision(specificity, rule.kind, best);
+    }
+}
+
+fn apply_rule_decision(specificity: usize, kind: RuleKind, best: &mut Option<(usize, RuleKind)>) {
+    let should_replace = !matches!(
+        *best,
+        Some((best_specificity, best_kind))
+            if specificity < best_specificity
+                || (specificity == best_specificity
+                    && !(kind == RuleKind::Allow && best_kind == RuleKind::Disallow))
+    );
+
+    if should_replace {
+        *best = Some((specificity, kind));
+    }
+}
+
+fn rule_decision(best: Option<(usize, RuleKind)>) -> bool {
+    match best {
+        Some((_, RuleKind::Allow)) | None => true,
+        Some((_, RuleKind::Disallow)) => false,
+    }
+}
+
+/// Returns matching specificity for robots longest-match rule selection.
 ///
 /// Patterns without wildcards use the common prefix fast path. A trailing `$`
-/// requires the match to consume the whole path.
-fn pattern_matches(pattern: &str, path: &str) -> bool {
-    let (pattern, anchored) = match pattern.strip_suffix('$') {
-        Some(pattern) => (pattern, true),
-        None => (pattern, false),
-    };
-
-    if !pattern.as_bytes().contains(&b'*') {
-        return if anchored {
-            path == pattern
-        } else {
-            path.starts_with(pattern)
-        };
+/// requires the match to consume the whole path but does not increase
+/// specificity.
+fn matching_specificity(pattern: &str, path: &str) -> Option<usize> {
+    if pattern.is_empty() {
+        return None;
     }
 
-    glob_matches(pattern.as_bytes(), path.as_bytes(), anchored)
+    let (pattern, anchored) = strip_end_anchor(pattern);
+    let matched = if pattern.as_bytes().contains(&b'*') {
+        glob_matches(pattern.as_bytes(), path.as_bytes(), anchored)
+    } else if anchored {
+        path == pattern
+    } else {
+        path.starts_with(pattern)
+    };
+
+    matched.then_some(pattern.len())
 }
 
 /// Matches a `*` wildcard pattern against a path byte slice.
@@ -777,12 +981,11 @@ fn glob_matches(pattern: &[u8], path: &[u8], anchored: bool) -> bool {
     !anchored || ends_with_star || offset == path.len()
 }
 
-/// Returns the specificity used for longest-match rule selection.
-///
-/// A trailing `$` anchor controls matching but does not make a rule more
-/// specific than the same literal pattern without the anchor.
-fn pattern_specificity(pattern: &str) -> usize {
-    pattern.strip_suffix('$').unwrap_or(pattern).len()
+fn strip_end_anchor(pattern: &str) -> (&str, bool) {
+    match pattern.strip_suffix('$') {
+        Some(pattern) => (pattern, true),
+        None => (pattern, false),
+    }
 }
 
 #[cfg(feature = "extensions")]
@@ -794,30 +997,37 @@ fn pattern_specificity(pattern: &str) -> usize {
 fn collect_extension<'a>(
     extensions: &mut Extensions<'a>,
     current: Option<&Group<'a>>,
+    directive: DirectiveKind,
     key: &'a str,
     value: &'a str,
 ) {
-    if key.eq_ignore_ascii_case("sitemap") {
-        if !value.is_empty() {
-            extensions.sitemaps.push(value);
+    match directive {
+        DirectiveKind::Sitemap => {
+            if !value.is_empty() {
+                extensions.sitemaps.push(value);
+            }
         }
-    } else if key.eq_ignore_ascii_case("crawl-delay") {
-        extensions.crawl_delays.push(CrawlDelay {
-            agents: current
-                .map(|group| group.agents.clone())
-                .unwrap_or_default(),
-            value,
-        });
-    } else if key.eq_ignore_ascii_case("host") {
-        if !value.is_empty() {
-            extensions.hosts.push(value);
+        DirectiveKind::CrawlDelay => {
+            extensions.crawl_delays.push(CrawlDelay {
+                agents: current
+                    .map(|group| group.agents.clone())
+                    .unwrap_or_default(),
+                value,
+            });
         }
-    } else if key.eq_ignore_ascii_case("clean-param") {
-        if !value.is_empty() {
-            extensions.clean_params.push(CleanParam { value });
+        DirectiveKind::Host => {
+            if !value.is_empty() {
+                extensions.hosts.push(value);
+            }
         }
-    } else {
-        extensions.other.push(Directive { key, value });
+        DirectiveKind::CleanParam => {
+            if !value.is_empty() {
+                extensions.clean_params.push(CleanParam { value });
+            }
+        }
+        _ => {
+            extensions.other.push(Directive { key, value });
+        }
     }
 }
 
@@ -843,6 +1053,15 @@ fn split_directive(line: &str) -> Option<(&str, &str)> {
 /// Unicode whitespace handling.
 fn trim_ascii(value: &str) -> &str {
     let bytes = value.as_bytes();
+    let Some((&first, rest)) = bytes.split_first() else {
+        return value;
+    };
+    let last = rest.last().copied().unwrap_or(first);
+
+    if !matches!(first, b' ' | b'\t') && !matches!(last, b' ' | b'\t') {
+        return value;
+    }
+
     let mut start = 0;
     let mut end = bytes.len();
 
@@ -992,6 +1211,47 @@ mod tests {
         let robots = RobotsTxt::parse("User-agent: *\nDisallow: /\n");
 
         assert!(robots.is_allowed("AnyBot", "/robots.txt"));
+    }
+
+    #[test]
+    fn compiled_matcher_matches_regular_matcher_for_core_rules() {
+        let robots = RobotsTxt::parse(
+            "User-agent: FooBot\n\
+            Disallow: /foo\n\
+            \n\
+            User-agent: FooBot\n\
+            Disallow: /bar\n\
+            Allow: /bar/public\n\
+            Disallow: /tie\n\
+            Allow: /tie\n\
+            \n\
+            User-agent: ImageBot\n\
+            Disallow: /*.gif$\n\
+            Allow: /public/*.gif$\n\
+            \n\
+            User-agent: *\n\
+            Disallow: /fallback\n",
+        );
+        let matcher = robots.matcher();
+
+        for (agent, path) in [
+            ("FooBot", "/foo/page"),
+            ("FooBot", "/bar/page"),
+            ("FooBot", "/bar/public/page"),
+            ("FooBot", "/tie"),
+            ("ImageBot", "/images/a.gif"),
+            ("ImageBot", "/images/a.gif?size=large"),
+            ("ImageBot", "/public/a.gif"),
+            ("OtherBot", "/fallback/page"),
+            ("OtherBot", "/public/page"),
+            ("OtherBot", "/robots.txt"),
+        ] {
+            assert_eq!(
+                matcher.is_allowed(agent, path),
+                robots.is_allowed(agent, path),
+                "compiled matcher differed for {agent} {path}"
+            );
+        }
     }
 
     #[test]
