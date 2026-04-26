@@ -77,6 +77,20 @@ assert!(!robots.is_allowed("ExampleBot", "/private/file.html"));
 assert!(robots.is_allowed("ExampleBot", "/private/public/file.html"));
 ```
 
+For many checks against the same parsed file, build a reusable matcher once:
+
+```rust
+use fast_robots::RobotsTxt;
+
+let robots = RobotsTxt::parse("User-agent: *\nDisallow: /private/\n");
+let matcher = robots.matcher();
+
+assert!(!matcher.is_allowed("ExampleBot", "/private/file.html"));
+assert!(matcher.is_allowed("ExampleBot", "/public/file.html"));
+```
+
+`RobotsTxt::is_allowed()` is still the lowest-overhead choice for one-off checks. `RobotsTxt::matcher()` allocates an index and precomputes rule metadata, which is intended for repeated checks against the same `robots.txt`.
+
 ### Fallible Parsing
 
 `RobotsTxt::parse(&str)` is intentionally tolerant and infallible. Malformed lines are ignored because crawlers are expected to use the parseable rules they can recover.
@@ -175,7 +189,7 @@ Exit codes for `check`:
 3. **Directive split**: `memchr(b':', ...)` separates key/value records.
 4. **Core parse**: `user-agent`, `allow`, and `disallow` are matched ASCII-case-insensitively.
 5. **Extension collection**: when enabled, non-core records are stored without changing group boundaries.
-6. **Access check**: matching groups are evaluated using longest-match semantics, with `Allow` preferred on equal specificity.
+6. **Access check**: matching groups are evaluated using longest-match semantics, with `Allow` preferred on equal specificity. `RobotsTxt::matcher()` can pre-index groups and rule metadata for repeated checks.
 
 ## Why not nom?
 
@@ -219,7 +233,7 @@ Current benchmark groups:
 | Group | Workload | Goal |
 |-------|----------|------|
 | `parse` | tiny, common, many groups, many rules, wildcard-heavy, extension-heavy, 500 KiB | parser throughput |
-| `match` | many rules, wildcard-heavy | `is_allowed()` throughput after parsing once |
+| `match` | many rules, wildcard-heavy | `is_allowed()` and precompiled matcher throughput after parsing once |
 | `parse_match` | tiny, common, many rules, 500 KiB | end-to-end parse plus access decision |
 
 The `parse_match` group compares `fast-robots` against `robotstxt`, the Rust port of Google's robots.txt parser and matcher. This is an API-level comparison, not a claim that the two crates currently have identical behavior for every edge case.

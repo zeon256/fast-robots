@@ -1,7 +1,7 @@
 use std::hint::black_box;
 
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
-use fast_robots::RobotsTxt;
+use fast_robots::{RobotsMatcher, RobotsTxt};
 use robotstxt::DefaultMatcher;
 
 #[global_allocator]
@@ -57,6 +57,20 @@ fn bench_match(c: &mut Criterion) {
             BenchmarkId::new("fast-robots", fixture.name),
             &robots,
             |b, robots| b.iter(|| black_box(match_batch(black_box(robots), black_box(&queries)))),
+        );
+
+        let matcher = robots.matcher();
+        group.bench_with_input(
+            BenchmarkId::new("fast-robots-compiled", fixture.name),
+            &matcher,
+            |b, matcher| {
+                b.iter(|| {
+                    black_box(match_batch_compiled(
+                        black_box(matcher),
+                        black_box(&queries),
+                    ))
+                })
+            },
         );
     }
 
@@ -157,6 +171,13 @@ fn match_batch(robots: &RobotsTxt<'_>, queries: &[(&str, &str)]) -> usize {
     queries
         .iter()
         .filter(|(agent, path)| robots.is_allowed(agent, path))
+        .count()
+}
+
+fn match_batch_compiled(matcher: &RobotsMatcher<'_>, queries: &[(&str, &str)]) -> usize {
+    queries
+        .iter()
+        .filter(|(agent, path)| matcher.is_allowed(agent, path))
         .count()
 }
 
