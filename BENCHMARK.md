@@ -107,25 +107,29 @@ Install once:
 cargo install flamegraph
 ```
 
-Build/profile with native CPU tuning, frame pointers, and release debug symbols:
+Build/profile with native CPU tuning, frame pointers, and unstripped debug symbols:
 
 ```bash
-CARGO_PROFILE_RELEASE_DEBUG=true RUSTFLAGS='-C target-cpu=native -C force-frame-pointers=yes' cargo flamegraph --example profile -- parse-common
+RUSTFLAGS='-C target-cpu=native -C force-frame-pointers=yes' cargo flamegraph --profile flamegraph --example profile -- parse-common
 ```
+
+The dedicated `flamegraph` profile matters because `[profile.release]` strips
+symbols. Setting `CARGO_PROFILE_RELEASE_DEBUG=true` alone still leaves the
+profiled binary stripped.
 
 Useful workloads:
 
 ```bash
-CARGO_PROFILE_RELEASE_DEBUG=true RUSTFLAGS='-C target-cpu=native -C force-frame-pointers=yes' cargo flamegraph --example profile -- parse-tiny
-CARGO_PROFILE_RELEASE_DEBUG=true RUSTFLAGS='-C target-cpu=native -C force-frame-pointers=yes' cargo flamegraph --example profile -- parse-common
-CARGO_PROFILE_RELEASE_DEBUG=true RUSTFLAGS='-C target-cpu=native -C force-frame-pointers=yes' cargo flamegraph --example profile -- parse-many-groups
-CARGO_PROFILE_RELEASE_DEBUG=true RUSTFLAGS='-C target-cpu=native -C force-frame-pointers=yes' cargo flamegraph --example profile -- parse-large
-CARGO_PROFILE_RELEASE_DEBUG=true RUSTFLAGS='-C target-cpu=native -C force-frame-pointers=yes' cargo flamegraph --example profile -- match-many-rules
-CARGO_PROFILE_RELEASE_DEBUG=true RUSTFLAGS='-C target-cpu=native -C force-frame-pointers=yes' cargo flamegraph --example profile -- parse-match-common
+RUSTFLAGS='-C target-cpu=native -C force-frame-pointers=yes' cargo flamegraph --profile flamegraph --example profile -- parse-tiny
+RUSTFLAGS='-C target-cpu=native -C force-frame-pointers=yes' cargo flamegraph --profile flamegraph --example profile -- parse-common
+RUSTFLAGS='-C target-cpu=native -C force-frame-pointers=yes' cargo flamegraph --profile flamegraph --example profile -- parse-many-groups
+RUSTFLAGS='-C target-cpu=native -C force-frame-pointers=yes' cargo flamegraph --profile flamegraph --example profile -- parse-large
+RUSTFLAGS='-C target-cpu=native -C force-frame-pointers=yes' cargo flamegraph --profile flamegraph --example profile -- match-many-rules
+RUSTFLAGS='-C target-cpu=native -C force-frame-pointers=yes' cargo flamegraph --profile flamegraph --example profile -- parse-match-common
 ```
 
 On macOS, `cargo flamegraph` may require elevated DTrace permissions. If needed, preserve the environment with `sudo -E env`:
 
 ```bash
-sudo -E env CARGO_PROFILE_RELEASE_DEBUG=true RUSTFLAGS='-C target-cpu=native -C force-frame-pointers=yes' cargo flamegraph --example profile -- parse-common
+sudo -E env RUSTFLAGS='-C target-cpu=native -C force-frame-pointers=yes' cargo flamegraph --profile flamegraph --example profile -- parse-common
 ```

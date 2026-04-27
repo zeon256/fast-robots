@@ -741,6 +741,27 @@ enum DirectiveKind {
 }
 
 fn classify_directive_key(key: &str) -> DirectiveKind {
+    match key.as_bytes() {
+        b"Allow" | b"allow" => return DirectiveKind::Allow,
+        b"Disallow" | b"disallow" => return DirectiveKind::Disallow,
+        b"User-agent" | b"user-agent" => return DirectiveKind::UserAgent,
+        #[cfg(feature = "extensions")]
+        b"Host" | b"host" => return DirectiveKind::Host,
+        #[cfg(feature = "extensions")]
+        b"Sitemap" | b"sitemap" => return DirectiveKind::Sitemap,
+        #[cfg(feature = "extensions")]
+        b"Crawl-delay" | b"crawl-delay" => return DirectiveKind::CrawlDelay,
+        #[cfg(feature = "extensions")]
+        b"Clean-param" | b"clean-param" => return DirectiveKind::CleanParam,
+        _ => {}
+    }
+
+    classify_directive_key_ignore_case(key)
+}
+
+#[cold]
+#[inline(never)]
+fn classify_directive_key_ignore_case(key: &str) -> DirectiveKind {
     match key.len() {
         5 if key.eq_ignore_ascii_case("allow") => DirectiveKind::Allow,
         8 if key.eq_ignore_ascii_case("disallow") => DirectiveKind::Disallow,
@@ -1137,6 +1158,15 @@ mod tests {
         assert_eq!(robots.groups.len(), 1);
         assert_eq!(robots.groups[0].agents, vec!["FooBot", "BarBot"]);
         assert_eq!(robots.groups[0].rules.len(), 2);
+        assert!(!robots.is_allowed("FooBot", "/private/file"));
+        assert!(robots.is_allowed("FooBot", "/private/public/file"));
+    }
+
+    #[test]
+    fn parses_directive_keys_case_insensitively() {
+        let robots =
+            RobotsTxt::parse("uSeR-aGeNt: FooBot\nDiSaLlOw: /private\nAlLoW: /private/public\n");
+
         assert!(!robots.is_allowed("FooBot", "/private/file"));
         assert!(robots.is_allowed("FooBot", "/private/public/file"));
     }

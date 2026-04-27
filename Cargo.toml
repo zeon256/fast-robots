@@ -39,6 +39,11 @@ codegen-units = 1
 panic = "abort"
 strip = "symbols"
 
+[profile.flamegraph]
+inherits = "release"
+debug = true
+strip = "none"
+
 [profile.bench]
 inherits = "release"
 debug = true
