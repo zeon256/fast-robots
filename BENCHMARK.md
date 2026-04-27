@@ -29,13 +29,13 @@ These results were captured after parser hot-path optimizations and adding bench
 
 | Benchmark | Median Time | Throughput |
 |-----------|-------------|------------|
-| `parse/fast-robots/tiny` | 77.757 ns | 417.00 MiB/s |
-| `parse/fast-robots/common` | 309.599 ns | 905.62 MiB/s |
-| `parse/fast-robots/many_groups` | 67.724 us | 1.0967 GiB/s |
-| `parse/fast-robots/many_rules` | 53.125 us | 1.1076 GiB/s |
-| `parse/fast-robots/wildcard_heavy` | 34.402 us | 1.9456 GiB/s |
-| `parse/fast-robots/extension_heavy` | 81.170 us | 1.2535 GiB/s |
-| `parse/fast-robots/large_500k` | 663.904 us | 753.22 MiB/s |
+| `parse/fast-robots/tiny` | 71.074 ns | 456.21 MiB/s |
+| `parse/fast-robots/common` | 285.700 ns | 981.38 MiB/s |
+| `parse/fast-robots/many_groups` | 63.803 us | 1.1641 GiB/s |
+| `parse/fast-robots/many_rules` | 48.622 us | 1.2101 GiB/s |
+| `parse/fast-robots/wildcard_heavy` | 31.603 us | 2.1179 GiB/s |
+| `parse/fast-robots/extension_heavy` | 77.236 us | 1.3173 GiB/s |
+| `parse/fast-robots/large_500k` | 643.442 us | 777.18 MiB/s |
 
 ## Match Throughput
 
@@ -43,10 +43,10 @@ These benchmarks parse once, then repeatedly run a small batch of access checks.
 
 | Benchmark | Median Time | Throughput |
 |-----------|-------------|------------|
-| `match/fast-robots/many_rules` | 84.374 us | 71.112 Kelem/s |
-| `match/fast-robots-compiled/many_rules` | 27.006 us | 222.173 Kelem/s |
-| `match/fast-robots/wildcard_heavy` | 132.148 us | 45.404 Kelem/s |
-| `match/fast-robots-compiled/wildcard_heavy` | 73.480 us | 81.655 Kelem/s |
+| `match/fast-robots/many_rules` | 81.627 us | 73.505 Kelem/s |
+| `match/fast-robots-compiled/many_rules` | 26.217 us | 228.857 Kelem/s |
+| `match/fast-robots/wildcard_heavy` | 130.401 us | 46.012 Kelem/s |
+| `match/fast-robots-compiled/wildcard_heavy` | 71.866 us | 83.489 Kelem/s |
 
 ## Parse + Match Comparison
 
@@ -56,23 +56,23 @@ This is an API-level comparison, not a claim that the two crates have identical 
 
 | Fixture | `fast-robots` Median | `robotstxt` Median | Speedup |
 |---------|----------------------|---------------------|---------|
-| tiny | 86.244 ns | 348.524 ns | 4.0x |
-| common | 333.243 ns | 2.3094 us | 6.9x |
-| many_rules | 73.857 us | 638.990 us | 8.7x |
-| large_500k | 678.757 us | 4.4226 ms | 6.5x |
+| tiny | 82.463 ns | 344.206 ns | 4.2x |
+| common | 311.850 ns | 2.303 us | 7.4x |
+| many_rules | 69.171 us | 619.738 us | 9.0x |
+| large_500k | 656.506 us | 4.169 ms | 6.4x |
 
 Detailed results:
 
 | Benchmark | Median Time | Throughput |
 |-----------|-------------|------------|
-| `parse_match/fast-robots/tiny` | 86.244 ns | 375.97 MiB/s |
-| `parse_match/robotstxt-google-port/tiny` | 348.524 ns | 93.03 MiB/s |
-| `parse_match/fast-robots/common` | 333.243 ns | 841.37 MiB/s |
-| `parse_match/robotstxt-google-port/common` | 2.3094 us | 121.41 MiB/s |
-| `parse_match/fast-robots/many_rules` | 73.857 us | 815.79 MiB/s |
-| `parse_match/robotstxt-google-port/many_rules` | 638.990 us | 94.29 MiB/s |
-| `parse_match/fast-robots/large_500k` | 678.757 us | 736.74 MiB/s |
-| `parse_match/robotstxt-google-port/large_500k` | 4.4226 ms | 113.07 MiB/s |
+| `parse_match/fast-robots/tiny` | 82.463 ns | 393.21 MiB/s |
+| `parse_match/robotstxt-google-port/tiny` | 344.206 ns | 94.20 MiB/s |
+| `parse_match/fast-robots/common` | 311.850 ns | 899.09 MiB/s |
+| `parse_match/robotstxt-google-port/common` | 2.303 us | 121.74 MiB/s |
+| `parse_match/fast-robots/many_rules` | 69.171 us | 871.05 MiB/s |
+| `parse_match/robotstxt-google-port/many_rules` | 619.738 us | 97.22 MiB/s |
+| `parse_match/fast-robots/large_500k` | 656.506 us | 761.71 MiB/s |
+| `parse_match/robotstxt-google-port/large_500k` | 4.169 ms | 119.94 MiB/s |
 
 ## Notes
 
