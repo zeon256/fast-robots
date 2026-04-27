@@ -43,6 +43,16 @@ The goal is simple: parse the standardized rules correctly, preserve useful ecos
 - **CLI included**: inspect parsed files and check whether a path is allowed from the terminal.
 - **Small dependency surface**: runtime dependencies are currently `memchr` and `argh`.
 
+## Performance
+
+`fast-robots` is fast enough that parsing is rarely the bottleneck:
+
+- **~1–2 GiB/s** parse throughput on Apple M1 (native CPU tuning, benchmark-only `mimalloc`).
+- **~4–9× faster** than `robotstxt` (Google's Rust port) on end-to-end parse + match workloads.
+- **~3× faster** repeated matching with the opt-in compiled matcher versus direct `is_allowed()`.
+
+See [BENCHMARK.md](BENCHMARK.md) for full methodology, fixtures, and environment details.
+
 ## Installation
 
 Add this to your `Cargo.toml`:
