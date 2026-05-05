@@ -1,6 +1,6 @@
 # Benchmarks
 
-This document records the current `fast-robots` benchmark results after parser hot-path optimizations, the opt-in compiled matcher, and benchmark-only `mimalloc`, along with the environment they were captured on.
+This document records the current `fast-robots` benchmark results after parser hot-path optimizations, the opt-in compiled matcher, benchmark-only `mimalloc`, and the opt-in real-corpus benchmarks, along with the environment they were captured on.
 
 The benchmark source lives in [`benches/robots.rs`](benches/robots.rs). The implementation under test is mostly in [`src/lib.rs`](src/lib.rs), with crate metadata in [`Cargo.toml`](Cargo.toml) and user-facing docs in [`README.md`](README.md).
 
@@ -73,6 +73,15 @@ Detailed results:
 | `parse_match/robotstxt-google-port/many_rules` | 619.738 us | 97.22 MiB/s |
 | `parse_match/fast-robots/large_500k` | 656.506 us | 761.71 MiB/s |
 | `parse_match/robotstxt-google-port/large_500k` | 4.169 ms | 119.94 MiB/s |
+
+## Real Corpus Throughput
+
+These opt-in benchmarks run against the pinned `nzrsky/robotstxt-benchmark-data` corpus described in [Reproducing](#reproducing): 6,863 real `robots.txt` records totaling 9,489,976 content bytes.
+
+| Benchmark | Median Time | Throughput |
+|-----------|-------------|------------|
+| `real_corpus/fast-robots-parse/nzrsky_6863` | 8.2235 ms | 1.0748 GiB/s |
+| `real_corpus/fast-robots-parse-match/nzrsky_6863` | 10.586 ms | 854.96 MiB/s |
 
 ## Notes
 
