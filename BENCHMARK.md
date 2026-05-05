@@ -97,6 +97,14 @@ Run a quick sanity check:
 RUSTFLAGS='-C target-cpu=native' cargo bench --bench robots -- --sample-size 10 --warm-up-time 0.1 --measurement-time 0.2
 ```
 
+Run the opt-in real-corpus benchmark against the pinned [`nzrsky/robotstxt-benchmark-data`](https://github.com/nzrsky/robotstxt-benchmark-data) snapshot:
+
+```bash
+FAST_ROBOTS_REAL_CORPUS=1 RUSTFLAGS='-C target-cpu=native' cargo bench --bench robots real_corpus
+```
+
+The benchmark downloads `robots_all.bin.gz` from commit `335730ed4ac3a4b64afe6a8a92c5e9eec59d704a`, verifies its SHA256, decompresses it, verifies the decompressed SHA256, and caches the decompressed length-prefixed corpus at `target/bench-data/robots_all.bin`. The cached file contains 6,863 real `robots.txt` records totaling 9,489,976 content bytes and is intentionally not committed.
+
 ## Flamegraph Profiling
 
 Use [`cargo-flamegraph`](https://github.com/flamegraph-rs/flamegraph) against the focused profiling example instead of the full Criterion suite.
