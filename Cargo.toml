@@ -51,3 +51,8 @@ strip = "none"
 inherits = "release"
 debug = true
 strip = "none"
+
+[workspace.metadata.dylint]
+libraries = [
+    { git = "https://github.com/zeon256/style-rust-aku", branch = "main" }
+]

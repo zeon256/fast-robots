@@ -88,7 +88,7 @@
 //! # }
 //! ```
 
-use std::collections::HashMap;
+use std::{collections::HashMap, str};
 
 use memchr::{memchr, memmem};
 use thiserror::Error;
@@ -110,7 +110,7 @@ pub const DEFAULT_MAX_BYTES: usize = 512 * 1024;
 pub enum ParseError {
     /// The input bytes were not valid UTF-8.
     #[error("robots.txt is not valid UTF-8")]
-    Utf8(#[from] std::str::Utf8Error),
+    Utf8(#[from] str::Utf8Error),
 
     /// The input length exceeded [`ParseOptions::max_bytes`].
     #[error("robots.txt is too large: {len} bytes exceeds limit of {max} bytes")]
@@ -445,7 +445,7 @@ impl<'a> RobotsTxt<'a> {
         options: ParseOptions,
     ) -> Result<Self, ParseError> {
         check_size(input.len(), options)?;
-        let input = std::str::from_utf8(input)?;
+        let input = str::from_utf8(input)?;
         Ok(Self::parse(input))
     }
 
@@ -570,7 +570,7 @@ impl<'a> RobotsTxt<'a> {
         options: ParseOptions,
     ) -> Result<ParseReport<'a>, ParseError> {
         check_size(input.len(), options)?;
-        let input = std::str::from_utf8(input)?;
+        let input = str::from_utf8(input)?;
         Ok(parse_inner(input, true))
     }
 
@@ -655,7 +655,7 @@ impl<'a> RobotsMatcher<'a> {
     fn new(robots: &'a RobotsTxt<'a>) -> Self {
         let groups = robots.groups.as_slice();
         let mut agent_groups: HashMap<String, Vec<usize>> = HashMap::new();
-        let mut fallback_groups = Vec::new();
+        let mut fallback_groups = vec![];
         let mut compiled_groups = Vec::with_capacity(groups.len());
 
         for (group_index, group) in groups.iter().enumerate() {
@@ -719,7 +719,7 @@ impl<'a> CompiledGroup<'a> {
         let mut compiled = Self {
             prefix_rules: RuleTrie::new(),
             exact_rules: HashMap::new(),
-            wildcard_rules: Vec::new(),
+            wildcard_rules: vec![],
             wildcard_prefixes: WildcardRuleTrie::new(),
         };
 
