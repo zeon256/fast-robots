@@ -49,7 +49,7 @@ The goal is simple: parse the standardized rules correctly, preserve useful ecos
 
 - **~1–2 GiB/s** parse throughput on Apple M1 (native CPU tuning, benchmark-only `mimalloc`).
 - **~4–9× faster** than `robotstxt` (Google's Rust port) on end-to-end parse + match workloads.
-- Substantially faster repeated matching with the opt-in compiled matcher on rule-heavy files.
+- **~270–380× faster** repeated matching with the opt-in compiled matcher on generated rule-heavy fixtures.
 
 See [BENCHMARK.md](BENCHMARK.md) for full methodology, fixtures, and environment details.
 
