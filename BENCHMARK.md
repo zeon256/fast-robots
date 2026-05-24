@@ -43,10 +43,10 @@ These benchmarks parse once, then repeatedly run a small batch of access checks.
 
 | Benchmark | Median Time | Throughput |
 |-----------|-------------|------------|
-| `match/fast-robots/many_rules` | 81.627 us | 73.505 Kelem/s |
-| `match/fast-robots-compiled/many_rules` | 26.217 us | 228.857 Kelem/s |
-| `match/fast-robots/wildcard_heavy` | 130.401 us | 46.012 Kelem/s |
-| `match/fast-robots-compiled/wildcard_heavy` | 71.866 us | 83.489 Kelem/s |
+| `match/fast-robots/many_rules` | 90.044 us | 66.634 Kelem/s |
+| `match/fast-robots-compiled/many_rules` | 331.76 ns | 18.085 Melem/s |
+| `match/fast-robots/wildcard_heavy` | 127.35 us | 47.114 Kelem/s |
+| `match/fast-robots-compiled/wildcard_heavy` | 335.93 ns | 17.861 Melem/s |
 
 ## Parse + Match Comparison
 
@@ -85,7 +85,7 @@ These opt-in benchmarks run against the pinned `nzrsky/robotstxt-benchmark-data`
 
 ## Notes
 
-- `RobotsTxt::matcher()` has an upfront indexing cost but improves repeated matching on rule-heavy inputs in this run: about 3.1x for `many_rules` and 1.8x for `wildcard_heavy` versus direct `is_allowed()` in the repeated-match benchmark.
+- `RobotsTxt::matcher()` has an upfront indexing cost but improves repeated matching on rule-heavy inputs in this run: about 271x for `many_rules` and 379x for `wildcard_heavy` versus direct `is_allowed()` in the repeated-match benchmark.
 - `fast-robots` intentionally keeps parsing line-oriented and zero-copy over `&str`.
 - Delimiter scanning and wildcard segment search use [`memchr`](https://docs.rs/memchr), which selects SIMD implementations on supported targets.
 - Native CPU tuning is significant on this machine, especially for large/generated fixtures.
