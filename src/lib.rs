@@ -259,22 +259,53 @@ pub enum RuleKind {
 /// Precompiled matcher for repeated access checks against one [`RobotsTxt`].
 ///
 /// Build this with [`RobotsTxt::matcher`] when checking many paths against the
-/// same parsed file. Construction allocates an index and precomputes rule
-/// metadata, so [`RobotsTxt::is_allowed`] remains the lower-overhead option for
-/// one-off checks.
+/// same parsed file. Construction allocates user-agent, prefix, exact-match,
+/// and wildcard-prefix indexes, so [`RobotsTxt::is_allowed`] remains the
+/// lower-overhead option for one-off checks.
 #[derive(Debug, Clone)]
 pub struct RobotsMatcher<'a> {
     agent_groups: HashMap<String, Vec<usize>>,
     fallback_groups: Vec<usize>,
-    compiled_rules: Vec<Vec<CompiledRule<'a>>>,
+    compiled_groups: Vec<CompiledGroup<'a>>,
 }
 
-#[derive(Debug, Clone, Copy)]
-struct CompiledRule<'a> {
+#[derive(Debug, Clone)]
+struct CompiledGroup<'a> {
+    prefix_rules: RuleTrie,
+    exact_rules: HashMap<&'a str, RuleKind>,
+    wildcard_rules: Vec<WildcardRule<'a>>,
+    wildcard_prefixes: WildcardRuleTrie,
+}
+
+#[derive(Debug, Clone)]
+struct RuleTrie {
+    nodes: Vec<RuleTrieNode>,
+}
+
+#[derive(Debug, Clone, Default)]
+struct RuleTrieNode {
+    edges: Vec<(u8, usize)>,
+    decision: Option<(usize, RuleKind)>,
+}
+
+#[derive(Debug, Clone)]
+struct WildcardRuleTrie {
+    nodes: Vec<WildcardRuleTrieNode>,
+}
+
+#[derive(Debug, Clone, Default)]
+struct WildcardRuleTrieNode {
+    edges: Vec<(u8, usize)>,
+    rule_indexes: Vec<usize>,
+}
+
+#[derive(Debug, Clone)]
+struct WildcardRule<'a> {
     kind: RuleKind,
-    pattern: &'a str,
+    first_len: usize,
+    segments: Vec<&'a [u8]>,
     anchored: bool,
-    has_wildcard: bool,
+    ends_with_star: bool,
     specificity: usize,
 }
 
@@ -545,10 +576,10 @@ impl<'a> RobotsTxt<'a> {
 
     /// Builds an indexed matcher for repeated access checks.
     ///
-    /// The returned matcher borrows this parsed file, indexes user-agent groups,
-    /// and precomputes rule metadata. Use it when checking many URLs against the
-    /// same `robots.txt`; for one-off checks, [`RobotsTxt::is_allowed`] avoids
-    /// the upfront allocation cost.
+    /// The returned matcher borrows this parsed file, indexes user-agent groups
+    /// and rule prefixes, and pre-splits wildcard patterns. Use it when checking
+    /// many URLs against the same `robots.txt`; for one-off checks,
+    /// [`RobotsTxt::is_allowed`] avoids the upfront allocation cost.
     ///
     /// # Examples
     ///
@@ -625,7 +656,7 @@ impl<'a> RobotsMatcher<'a> {
         let groups = robots.groups.as_slice();
         let mut agent_groups: HashMap<String, Vec<usize>> = HashMap::new();
         let mut fallback_groups = Vec::new();
-        let mut compiled_rules = Vec::with_capacity(groups.len());
+        let mut compiled_groups = Vec::with_capacity(groups.len());
 
         for (group_index, group) in groups.iter().enumerate() {
             for agent in &group.agents {
@@ -639,13 +670,13 @@ impl<'a> RobotsMatcher<'a> {
                 }
             }
 
-            compiled_rules.push(group.rules.iter().filter_map(CompiledRule::new).collect());
+            compiled_groups.push(CompiledGroup::new(group));
         }
 
         Self {
             agent_groups,
             fallback_groups,
-            compiled_rules,
+            compiled_groups,
         }
     }
 
@@ -678,38 +709,217 @@ impl<'a> RobotsMatcher<'a> {
         best: &mut Option<(usize, RuleKind)>,
     ) {
         for &group_index in group_indexes {
-            apply_compiled_rules(&self.compiled_rules[group_index], path, best);
+            self.compiled_groups[group_index].apply_rules(path, best);
         }
     }
 }
 
-impl<'a> CompiledRule<'a> {
-    fn new(rule: &Rule<'a>) -> Option<Self> {
+impl<'a> CompiledGroup<'a> {
+    fn new(group: &Group<'a>) -> Self {
+        let mut compiled = Self {
+            prefix_rules: RuleTrie::new(),
+            exact_rules: HashMap::new(),
+            wildcard_rules: Vec::new(),
+            wildcard_prefixes: WildcardRuleTrie::new(),
+        };
+
+        for rule in &group.rules {
+            compiled.push_rule(rule);
+        }
+
+        compiled
+    }
+
+    fn push_rule(&mut self, rule: &Rule<'a>) {
         if rule.pattern.is_empty() {
-            return None;
+            return;
         }
 
         let (pattern, anchored) = strip_end_anchor(rule.pattern);
+        let pattern_bytes = pattern.as_bytes();
 
-        Some(Self {
-            kind: rule.kind,
-            pattern,
-            anchored,
-            has_wildcard: pattern.as_bytes().contains(&b'*'),
-            specificity: pattern.len(),
-        })
+        if let Some(first_wildcard) = memchr(b'*', pattern_bytes) {
+            let rule_index = self.wildcard_rules.len();
+            self.wildcard_prefixes
+                .insert(&pattern_bytes[..first_wildcard], rule_index);
+            self.wildcard_rules.push(WildcardRule::new(
+                rule.kind,
+                pattern,
+                anchored,
+                first_wildcard,
+            ));
+        } else if anchored {
+            let decision = self.exact_rules.entry(pattern).or_insert(rule.kind);
+            if rule.kind == RuleKind::Allow {
+                *decision = RuleKind::Allow;
+            }
+        } else {
+            self.prefix_rules
+                .insert(pattern_bytes, pattern.len(), rule.kind);
+        }
     }
 
-    fn matching_specificity(self, path: &str) -> Option<usize> {
-        let matched = if self.has_wildcard {
-            glob_matches(self.pattern.as_bytes(), path.as_bytes(), self.anchored)
-        } else if self.anchored {
-            path == self.pattern
-        } else {
-            path.starts_with(self.pattern)
-        };
+    fn apply_rules(&self, path: &str, best: &mut Option<(usize, RuleKind)>) {
+        let path_bytes = path.as_bytes();
 
-        matched.then_some(self.specificity)
+        self.prefix_rules.apply_matches(path_bytes, best);
+
+        if let Some(&kind) = self.exact_rules.get(path) {
+            apply_rule_decision(path.len(), kind, best);
+        }
+
+        self.wildcard_prefixes
+            .apply_matches(path_bytes, &self.wildcard_rules, best);
+    }
+}
+
+impl RuleTrie {
+    fn new() -> Self {
+        Self {
+            nodes: vec![RuleTrieNode::default()],
+        }
+    }
+
+    fn insert(&mut self, pattern: &[u8], specificity: usize, kind: RuleKind) {
+        let mut node_index = 0;
+        for &byte in pattern {
+            node_index = self.child_or_insert(node_index, byte);
+        }
+
+        apply_rule_decision(specificity, kind, &mut self.nodes[node_index].decision);
+    }
+
+    fn apply_matches(&self, path: &[u8], best: &mut Option<(usize, RuleKind)>) {
+        let mut node_index = 0;
+
+        for &byte in path {
+            let Some(next_index) = self.child(node_index, byte) else {
+                return;
+            };
+            node_index = next_index;
+
+            if let Some((specificity, kind)) = self.nodes[node_index].decision {
+                apply_rule_decision(specificity, kind, best);
+            }
+        }
+    }
+
+    fn child(&self, node_index: usize, byte: u8) -> Option<usize> {
+        self.nodes[node_index]
+            .edges
+            .iter()
+            .find_map(|&(edge_byte, child_index)| (edge_byte == byte).then_some(child_index))
+    }
+
+    fn child_or_insert(&mut self, node_index: usize, byte: u8) -> usize {
+        if let Some(child_index) = self.child(node_index, byte) {
+            return child_index;
+        }
+
+        let child_index = self.nodes.len();
+        self.nodes.push(RuleTrieNode::default());
+        self.nodes[node_index].edges.push((byte, child_index));
+        child_index
+    }
+}
+
+impl WildcardRuleTrie {
+    fn new() -> Self {
+        Self {
+            nodes: vec![WildcardRuleTrieNode::default()],
+        }
+    }
+
+    fn insert(&mut self, literal_prefix: &[u8], rule_index: usize) {
+        let mut node_index = 0;
+        for &byte in literal_prefix {
+            node_index = self.child_or_insert(node_index, byte);
+        }
+
+        self.nodes[node_index].rule_indexes.push(rule_index);
+    }
+
+    fn apply_matches(
+        &self,
+        path: &[u8],
+        rules: &[WildcardRule<'_>],
+        best: &mut Option<(usize, RuleKind)>,
+    ) {
+        let mut node_index = 0;
+        self.apply_node_rules(node_index, path, rules, best);
+
+        for &byte in path {
+            let Some(next_index) = self.child(node_index, byte) else {
+                return;
+            };
+            node_index = next_index;
+            self.apply_node_rules(node_index, path, rules, best);
+        }
+    }
+
+    fn apply_node_rules(
+        &self,
+        node_index: usize,
+        path: &[u8],
+        rules: &[WildcardRule<'_>],
+        best: &mut Option<(usize, RuleKind)>,
+    ) {
+        for &rule_index in &self.nodes[node_index].rule_indexes {
+            let rule = &rules[rule_index];
+            let Some(specificity) = rule.matching_specificity(path) else {
+                continue;
+            };
+
+            apply_rule_decision(specificity, rule.kind, best);
+        }
+    }
+
+    fn child(&self, node_index: usize, byte: u8) -> Option<usize> {
+        self.nodes[node_index]
+            .edges
+            .iter()
+            .find_map(|&(edge_byte, child_index)| (edge_byte == byte).then_some(child_index))
+    }
+
+    fn child_or_insert(&mut self, node_index: usize, byte: u8) -> usize {
+        if let Some(child_index) = self.child(node_index, byte) {
+            return child_index;
+        }
+
+        let child_index = self.nodes.len();
+        self.nodes.push(WildcardRuleTrieNode::default());
+        self.nodes[node_index].edges.push((byte, child_index));
+        child_index
+    }
+}
+
+impl<'a> WildcardRule<'a> {
+    fn new(kind: RuleKind, pattern: &'a str, anchored: bool, first_wildcard: usize) -> Self {
+        let pattern_bytes = pattern.as_bytes();
+        let segments = pattern_bytes[first_wildcard + 1..]
+            .split(|byte| *byte == b'*')
+            .filter(|segment| !segment.is_empty())
+            .collect();
+
+        Self {
+            kind,
+            first_len: first_wildcard,
+            segments,
+            anchored,
+            ends_with_star: pattern_bytes.last() == Some(&b'*'),
+            specificity: pattern.len(),
+        }
+    }
+
+    fn matching_specificity(&self, path: &[u8]) -> Option<usize> {
+        let mut offset = self.first_len;
+
+        for segment in &self.segments {
+            let found = memmem::find(&path[offset..], segment)?;
+            offset += found + segment.len();
+        }
+
+        (!self.anchored || self.ends_with_star || offset == path.len()).then_some(self.specificity)
     }
 }
 
@@ -905,20 +1115,6 @@ fn parse_inner<'a>(input: &'a str, diagnostics: bool) -> ParseReport<'a> {
 fn apply_group_rules(group: &Group<'_>, path: &str, best: &mut Option<(usize, RuleKind)>) {
     for rule in &group.rules {
         let Some(specificity) = matching_specificity(rule.pattern, path) else {
-            continue;
-        };
-
-        apply_rule_decision(specificity, rule.kind, best);
-    }
-}
-
-fn apply_compiled_rules(
-    rules: &[CompiledRule<'_>],
-    path: &str,
-    best: &mut Option<(usize, RuleKind)>,
-) {
-    for rule in rules {
-        let Some(specificity) = rule.matching_specificity(path) else {
             continue;
         };
 
@@ -1280,6 +1476,35 @@ mod tests {
                 matcher.is_allowed(agent, path),
                 robots.is_allowed(agent, path),
                 "compiled matcher differed for {agent} {path}"
+            );
+        }
+    }
+
+    #[test]
+    fn compiled_matcher_matches_specialized_rule_indexes() {
+        let robots = RobotsTxt::parse(
+            "User-agent: *\n\
+            Disallow: /exact$\n\
+            Allow: /exact/public\n\
+            Disallow: *.secret$\n\
+            Allow: /download/*/public/*.secret$\n\
+            Disallow: /download/private/*\n",
+        );
+        let matcher = robots.matcher();
+
+        for path in [
+            "/exact",
+            "/exactly",
+            "/exact/public/file",
+            "/a.secret",
+            "/a.secret?x=1",
+            "/download/foo/public/file.secret",
+            "/download/private/file",
+        ] {
+            assert_eq!(
+                matcher.is_allowed("AnyBot", path),
+                robots.is_allowed("AnyBot", path),
+                "compiled matcher differed for {path}"
             );
         }
     }

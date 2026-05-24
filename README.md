@@ -49,7 +49,7 @@ The goal is simple: parse the standardized rules correctly, preserve useful ecos
 
 - **~1–2 GiB/s** parse throughput on Apple M1 (native CPU tuning, benchmark-only `mimalloc`).
 - **~4–9× faster** than `robotstxt` (Google's Rust port) on end-to-end parse + match workloads.
-- **~3× faster** repeated matching with the opt-in compiled matcher versus direct `is_allowed()`.
+- Substantially faster repeated matching with the opt-in compiled matcher on rule-heavy files.
 
 See [BENCHMARK.md](BENCHMARK.md) for full methodology, fixtures, and environment details.
 
@@ -99,7 +99,7 @@ assert!(!matcher.is_allowed("ExampleBot", "/private/file.html"));
 assert!(matcher.is_allowed("ExampleBot", "/public/file.html"));
 ```
 
-`RobotsTxt::is_allowed()` is still the lowest-overhead choice for one-off checks. `RobotsTxt::matcher()` allocates an index and precomputes rule metadata, which is intended for repeated checks against the same `robots.txt`.
+`RobotsTxt::is_allowed()` is still the lowest-overhead choice for one-off checks. `RobotsTxt::matcher()` allocates user-agent, prefix, exact-match, and wildcard-prefix indexes for repeated checks against the same `robots.txt`.
 
 ### Fallible Parsing
 
@@ -199,7 +199,7 @@ Exit codes for `check`:
 3. **Directive split**: `memchr(b':', ...)` separates key/value records.
 4. **Core parse**: `user-agent`, `allow`, and `disallow` are matched ASCII-case-insensitively.
 5. **Extension collection**: when enabled, non-core records are stored without changing group boundaries.
-6. **Access check**: matching groups are evaluated using longest-match semantics, with `Allow` preferred on equal specificity. `RobotsTxt::matcher()` can pre-index groups and rule metadata for repeated checks.
+6. **Access check**: matching groups are evaluated using longest-match semantics, with `Allow` preferred on equal specificity. `RobotsTxt::matcher()` can pre-index groups, plain path prefixes, exact anchors, and wildcard literal prefixes for repeated checks.
 
 ## Why not nom?
 

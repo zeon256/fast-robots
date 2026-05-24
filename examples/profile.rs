@@ -36,6 +36,18 @@ fn main() -> ExitCode {
         "match-wildcard-heavy" => {
             run_match(wildcard_heavy_fixture(), iterations.unwrap_or(200_000))
         }
+        "match-compiled-many-rules" => {
+            run_compiled_match(many_rules_fixture(), iterations.unwrap_or(300_000))
+        }
+        "match-compiled-wildcard-heavy" => {
+            run_compiled_match(wildcard_heavy_fixture(), iterations.unwrap_or(200_000))
+        }
+        "matcher-build-many-rules" => {
+            run_matcher_build(many_rules_fixture(), iterations.unwrap_or(50_000))
+        }
+        "matcher-build-wildcard-heavy" => {
+            run_matcher_build(wildcard_heavy_fixture(), iterations.unwrap_or(50_000))
+        }
         "parse-match-common" => run_parse_match(common_fixture(), iterations.unwrap_or(1_000_000)),
         "parse-match-large" => run_parse_match(large_500k_fixture(), iterations.unwrap_or(2_000)),
         _ => {
@@ -61,6 +73,10 @@ fn print_usage(program: &str) {
         "parse-large",
         "match-many-rules",
         "match-wildcard-heavy",
+        "match-compiled-many-rules",
+        "match-compiled-wildcard-heavy",
+        "matcher-build-many-rules",
+        "matcher-build-wildcard-heavy",
         "parse-match-common",
         "parse-match-large",
     ] {
@@ -96,6 +112,41 @@ fn run_match(input: String, iterations: usize) -> usize {
             ));
         }
     }
+    total
+}
+
+fn run_compiled_match(input: String, iterations: usize) -> usize {
+    let robots = RobotsTxt::parse(&input);
+    let matcher = robots.matcher();
+    let queries = vec![
+        ("ExampleBot", "/private/0/page.html"),
+        ("ExampleBot", "/private/10/public/file.html"),
+        ("ExampleBot", "/assets/alpha/private/image.gif"),
+        ("ExampleBot", "/assets/alpha/private/image.gif?size=large"),
+        ("OtherBot", "/fallback/blocked"),
+        ("OtherBot", "/"),
+    ];
+
+    let mut total = 0;
+    for _ in 0..iterations {
+        for (agent, path) in &queries {
+            total += usize::from(black_box(
+                matcher.is_allowed(black_box(agent), black_box(path)),
+            ));
+        }
+    }
+    total
+}
+
+fn run_matcher_build(input: String, iterations: usize) -> usize {
+    let robots = RobotsTxt::parse(&input);
+    let mut total = 0;
+
+    for _ in 0..iterations {
+        let matcher = black_box(robots.matcher());
+        total += black_box(std::mem::size_of_val(&matcher));
+    }
+
     total
 }
 

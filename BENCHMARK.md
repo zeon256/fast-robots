@@ -1,6 +1,6 @@
 # Benchmarks
 
-This document records the current `fast-robots` benchmark results after parser hot-path optimizations, the opt-in compiled matcher, benchmark-only `mimalloc`, and the opt-in real-corpus benchmarks, along with the environment they were captured on.
+This document records an Apple M1 `fast-robots` benchmark run after parser hot-path optimizations, the opt-in compiled matcher, benchmark-only `mimalloc`, and the opt-in real-corpus benchmarks, along with the environment they were captured on. Later local Linux matcher-indexing follow-up results live in [`findings/`](findings/).
 
 The benchmark source lives in [`benches/robots.rs`](benches/robots.rs). The implementation under test is mostly in [`src/lib.rs`](src/lib.rs), with crate metadata in [`Cargo.toml`](Cargo.toml) and user-facing docs in [`README.md`](README.md).
 
@@ -142,6 +142,9 @@ RUSTFLAGS='-C target-cpu=native -C force-frame-pointers=yes' cargo flamegraph --
 RUSTFLAGS='-C target-cpu=native -C force-frame-pointers=yes' cargo flamegraph --profile flamegraph --example profile -- parse-many-groups
 RUSTFLAGS='-C target-cpu=native -C force-frame-pointers=yes' cargo flamegraph --profile flamegraph --example profile -- parse-large
 RUSTFLAGS='-C target-cpu=native -C force-frame-pointers=yes' cargo flamegraph --profile flamegraph --example profile -- match-many-rules
+RUSTFLAGS='-C target-cpu=native -C force-frame-pointers=yes' cargo flamegraph --profile flamegraph --example profile -- match-compiled-many-rules
+RUSTFLAGS='-C target-cpu=native -C force-frame-pointers=yes' cargo flamegraph --profile flamegraph --example profile -- match-compiled-wildcard-heavy
+RUSTFLAGS='-C target-cpu=native -C force-frame-pointers=yes' cargo flamegraph --profile flamegraph --example profile -- matcher-build-many-rules
 RUSTFLAGS='-C target-cpu=native -C force-frame-pointers=yes' cargo flamegraph --profile flamegraph --example profile -- parse-match-common
 ```
 
