@@ -264,9 +264,9 @@ pub enum RuleKind {
 /// lower-overhead option for one-off checks.
 #[derive(Debug, Clone)]
 pub struct RobotsMatcher<'a> {
-    agent_groups: HashMap<String, Vec<usize>>,
-    fallback_groups: Vec<usize>,
-    compiled_groups: Vec<CompiledGroup<'a>>,
+    agents: HashMap<String, Vec<usize>>,
+    fallback: Vec<usize>,
+    compiled: Vec<CompiledGroup<'a>>,
 }
 
 #[derive(Debug, Clone)]
@@ -396,6 +396,7 @@ impl<'a> RobotsTxt<'a> {
     /// assert!(!robots.is_allowed("ExampleBot", "/private/file.html"));
     /// assert!(robots.is_allowed("ExampleBot", "/public/file.html"));
     /// ```
+    #[must_use]
     pub fn parse(input: &'a str) -> Self {
         parse_inner(input, false).robots
     }
@@ -405,6 +406,11 @@ impl<'a> RobotsTxt<'a> {
     /// Returns [`ParseError::Utf8`] for invalid UTF-8 and
     /// [`ParseError::TooLarge`] when the input is larger than
     /// [`DEFAULT_MAX_BYTES`].
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when `input` is not valid UTF-8 or exceeds the default
+    /// size limit.
     ///
     /// # Examples
     ///
@@ -424,6 +430,11 @@ impl<'a> RobotsTxt<'a> {
     /// Parses UTF-8 bytes into access rules with explicit options.
     ///
     /// Use this when reading raw bytes and you need a custom size limit.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when `input` is not valid UTF-8 or exceeds the configured
+    /// size limit.
     ///
     /// # Examples
     ///
@@ -453,6 +464,10 @@ impl<'a> RobotsTxt<'a> {
     ///
     /// This is useful when the input is already a `str` but should still be
     /// checked against a maximum size.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when `input` exceeds the configured size limit.
     ///
     /// # Examples
     ///
@@ -495,11 +510,16 @@ impl<'a> RobotsTxt<'a> {
     /// ));
     /// assert!(!report.robots.is_allowed("ExampleBot", "/private"));
     /// ```
+    #[must_use]
     pub fn parse_with_diagnostics(input: &'a str) -> ParseReport<'a> {
         parse_inner(input, true)
     }
 
     /// Parses a UTF-8 string with diagnostics and explicit options.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when `input` exceeds the configured size limit.
     ///
     /// # Examples
     ///
@@ -529,6 +549,11 @@ impl<'a> RobotsTxt<'a> {
     ///
     /// Uses [`ParseOptions::default`] for size checking.
     ///
+    /// # Errors
+    ///
+    /// Returns an error when `input` is not valid UTF-8 or exceeds the default
+    /// size limit.
+    ///
     /// # Examples
     ///
     /// ```
@@ -549,6 +574,11 @@ impl<'a> RobotsTxt<'a> {
     }
 
     /// Parses UTF-8 bytes with diagnostics and explicit options.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when `input` is not valid UTF-8 or exceeds the configured
+    /// size limit.
     ///
     /// # Examples
     ///
@@ -592,6 +622,7 @@ impl<'a> RobotsTxt<'a> {
     /// assert!(!matcher.is_allowed("ExampleBot", "/private/file"));
     /// assert!(matcher.is_allowed("ExampleBot", "/public/file"));
     /// ```
+    #[must_use]
     pub fn matcher(&'a self) -> RobotsMatcher<'a> {
         RobotsMatcher::new(self)
     }
@@ -620,6 +651,7 @@ impl<'a> RobotsTxt<'a> {
     /// assert!(robots.is_allowed("ExampleBot", "/private/public/file"));
     /// assert!(robots.is_allowed("ExampleBot", "/robots.txt"));
     /// ```
+    #[must_use]
     pub fn is_allowed(&self, user_agent: &str, path: &str) -> bool {
         if path == "/robots.txt" {
             return true;
@@ -654,29 +686,29 @@ impl<'a> RobotsTxt<'a> {
 impl<'a> RobotsMatcher<'a> {
     fn new(robots: &'a RobotsTxt<'a>) -> Self {
         let groups = robots.groups.as_slice();
-        let mut agent_groups: HashMap<String, Vec<usize>> = HashMap::new();
-        let mut fallback_groups = vec![];
-        let mut compiled_groups = Vec::with_capacity(groups.len());
+        let mut agents: HashMap<String, Vec<usize>> = HashMap::new();
+        let mut fallback = vec![];
+        let mut compiled = Vec::with_capacity(groups.len());
 
         for (group_index, group) in groups.iter().enumerate() {
             for agent in &group.agents {
                 if *agent == "*" {
-                    fallback_groups.push(group_index);
+                    fallback.push(group_index);
                 } else {
-                    let indexes = agent_groups.entry(agent.to_ascii_lowercase()).or_default();
+                    let indexes = agents.entry(agent.to_ascii_lowercase()).or_default();
                     if !indexes.contains(&group_index) {
                         indexes.push(group_index);
                     }
                 }
             }
 
-            compiled_groups.push(CompiledGroup::new(group));
+            compiled.push(CompiledGroup::new(group));
         }
 
         Self {
-            agent_groups,
-            fallback_groups,
-            compiled_groups,
+            agents,
+            fallback,
+            compiled,
         }
     }
 
@@ -685,6 +717,7 @@ impl<'a> RobotsMatcher<'a> {
     /// This has the same access semantics as [`RobotsTxt::is_allowed`], including
     /// exact user-agent precedence over `*`, merged exact groups, longest-match
     /// rule selection, `Allow` tie wins, and implicit allowance for `/robots.txt`.
+    #[must_use]
     pub fn is_allowed(&self, user_agent: &str, path: &str) -> bool {
         if path == "/robots.txt" {
             return true;
@@ -693,10 +726,10 @@ impl<'a> RobotsMatcher<'a> {
         let mut best: Option<(usize, RuleKind)> = None;
         let agent = user_agent.to_ascii_lowercase();
 
-        if let Some(group_indexes) = self.agent_groups.get(&agent) {
+        if let Some(group_indexes) = self.agents.get(&agent) {
             self.apply_group_indexes(group_indexes, path, &mut best);
         } else {
-            self.apply_group_indexes(&self.fallback_groups, path, &mut best);
+            self.apply_group_indexes(&self.fallback, path, &mut best);
         }
 
         rule_decision(best)
@@ -709,7 +742,7 @@ impl<'a> RobotsMatcher<'a> {
         best: &mut Option<(usize, RuleKind)>,
     ) {
         for &group_index in group_indexes {
-            self.compiled_groups[group_index].apply_rules(path, best);
+            self.compiled[group_index].apply_rules(path, best);
         }
     }
 }
@@ -988,7 +1021,7 @@ fn classify_directive_key_ignore_case(key: &str) -> DirectiveKind {
     }
 }
 
-fn new_group<'a>(agent: &'a str) -> Group<'a> {
+fn new_group(agent: &str) -> Group<'_> {
     Group {
         agents: vec![agent],
         rules: Vec::with_capacity(4),
@@ -1049,7 +1082,7 @@ fn parse_inner<'a>(input: &'a str, diagnostics: bool) -> ParseReport<'a> {
                         });
                     }
                     continue;
-                };
+                }
 
                 match current.as_mut() {
                     Some(group) if !current_has_rules => group.agents.push(value),

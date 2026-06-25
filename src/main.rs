@@ -47,19 +47,19 @@ struct CheckCommand {
 fn main() -> ExitCode {
     let args: Args = argh::from_env();
 
-    match args.command {
+    match &args.command {
         Command::Parse(command) => parse(command),
         Command::Check(command) => check(command),
     }
 }
 
-fn parse(command: ParseCommand) -> ExitCode {
+fn parse(command: &ParseCommand) -> ExitCode {
     let Some(input) = read_file(&command.file) else {
         return ExitCode::from(2);
     };
     let report = match RobotsTxt::parse_bytes_with_diagnostics(&input) {
         Ok(report) => report,
-        Err(error) => return parse_error(&command.file, error),
+        Err(error) => return parse_error(&command.file, &error),
     };
 
     println!("{:#?}", report.robots);
@@ -69,13 +69,13 @@ fn parse(command: ParseCommand) -> ExitCode {
     ExitCode::SUCCESS
 }
 
-fn check(command: CheckCommand) -> ExitCode {
+fn check(command: &CheckCommand) -> ExitCode {
     let Some(input) = read_file(&command.file) else {
         return ExitCode::from(2);
     };
     let robots = match RobotsTxt::parse_bytes(&input) {
         Ok(robots) => robots,
-        Err(error) => return parse_error(&command.file, error),
+        Err(error) => return parse_error(&command.file, &error),
     };
     let allowed = robots.is_allowed(&command.agent, &command.path);
 
@@ -97,7 +97,7 @@ fn read_file(path: &str) -> Option<Vec<u8>> {
     }
 }
 
-fn parse_error(path: &str, error: ParseError) -> ExitCode {
+fn parse_error(path: &str, error: &ParseError) -> ExitCode {
     eprintln!("failed to parse {path}: {error}");
     ExitCode::from(2)
 }

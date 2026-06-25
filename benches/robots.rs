@@ -1,4 +1,5 @@
 use std::error::Error;
+use std::fmt::Write as _;
 use std::fs;
 use std::hint::black_box;
 use std::io::{self, Read};
@@ -91,7 +92,7 @@ fn bench_match(c: &mut Criterion) {
                         black_box(matcher),
                         black_box(&queries),
                     ))
-                })
+                });
             },
         );
     }
@@ -133,7 +134,7 @@ fn bench_parse_match(c: &mut Criterion) {
                 b.iter(|| {
                     let robots = RobotsTxt::parse(black_box(input));
                     black_box(robots.is_allowed(black_box(agent), black_box(path)))
-                })
+                });
             },
         );
 
@@ -148,7 +149,7 @@ fn bench_parse_match(c: &mut Criterion) {
                         black_box(agent),
                         black_box(url),
                     ))
-                })
+                });
             },
         );
     }
@@ -181,7 +182,7 @@ fn bench_real_corpus(c: &mut Criterion) {
                     .map(|input| RobotsTxt::parse(black_box(input.as_str())).groups.len())
                     .sum::<usize>();
                 black_box(parsed_groups)
-            })
+            });
         },
     );
 
@@ -198,7 +199,7 @@ fn bench_real_corpus(c: &mut Criterion) {
                     })
                     .count();
                 black_box(allowed)
-            })
+            });
         },
     );
 
@@ -434,7 +435,7 @@ fn tiny_fixture() -> String {
 }
 
 fn common_fixture() -> String {
-    r#"
+    r"
 # Common robots.txt shape.
 Sitemap: https://example.com/sitemap.xml
 User-agent: *
@@ -450,7 +451,7 @@ Crawl-delay: 5
 User-agent: ImageBot
 Disallow: /*.gif$
 Allow: /public/*.gif$
-"#
+"
     .to_owned()
 }
 
@@ -459,9 +460,11 @@ fn many_groups_fixture() -> String {
     input.push_str("Sitemap: https://example.com/sitemap.xml\n");
 
     for index in 0..1_000 {
-        input.push_str(&format!(
+        write!(
+            input,
             "User-agent: Bot{index}\nDisallow: /bot/{index}/private/\nAllow: /bot/{index}/private/public/\n\n"
-        ));
+        )
+        .expect("writing to String cannot fail");
     }
 
     input.push_str("User-agent: *\nDisallow: /fallback/blocked\n");
@@ -473,9 +476,10 @@ fn many_rules_fixture() -> String {
     input.push_str("User-agent: ExampleBot\n");
 
     for index in 0..2_000 {
-        input.push_str(&format!("Disallow: /private/{index}/\n"));
+        writeln!(input, "Disallow: /private/{index}/").expect("writing to String cannot fail");
         if index % 4 == 0 {
-            input.push_str(&format!("Allow: /private/{index}/public/\n"));
+            writeln!(input, "Allow: /private/{index}/public/")
+                .expect("writing to String cannot fail");
         }
     }
 
@@ -488,9 +492,11 @@ fn wildcard_heavy_fixture() -> String {
     input.push_str("User-agent: ExampleBot\n");
 
     for index in 0..1_000 {
-        input.push_str(&format!(
+        write!(
+            input,
             "Disallow: /assets/{index}/*/private/*.gif$\nAllow: /assets/{index}/public/*.gif$\n"
-        ));
+        )
+        .expect("writing to String cannot fail");
     }
 
     input.push_str("Disallow: /assets/*/private/*.gif$\nAllow: /assets/public/*.gif$\n");
@@ -501,18 +507,22 @@ fn extension_heavy_fixture() -> String {
     let mut input = String::new();
 
     for index in 0..1_000 {
-        input.push_str(&format!(
+        write!(
+            input,
             "Sitemap: https://cdn{index}.example.com/sitemap.xml\nX-Meta-{index}: value-{index}\n"
-        ));
+        )
+        .expect("writing to String cannot fail");
     }
 
     input.push_str("User-agent: ExampleBot\n");
     for index in 0..500 {
-        input.push_str(&format!(
+        write!(
+            input,
             "Crawl-delay: {}\nClean-param: ref{} /shop\nHost: example.com\nDisallow: /ext/{index}/\n",
             (index % 20) + 1,
             index
-        ));
+        )
+        .expect("writing to String cannot fail");
     }
 
     input
@@ -524,10 +534,12 @@ fn large_500k_fixture() -> String {
 
     let mut index = 0;
     while input.len() < 512 * 1024 {
-        input.push_str(&format!(
+        write!(
+            input,
             "User-agent: Bot{index}\nDisallow: /private/{index}/\nAllow: /private/{index}/public/\nCrawl-delay: {}\nX-Trace: value-{index}\n\n",
             (index % 20) + 1
-        ));
+        )
+        .expect("writing to String cannot fail");
         index += 1;
     }
 
