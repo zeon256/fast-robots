@@ -1,4 +1,4 @@
-use std::{env, hint::black_box, process::ExitCode};
+use std::{env, fmt::Write as _, hint::black_box, process::ExitCode};
 
 use fast_robots::RobotsTxt;
 
@@ -23,33 +23,35 @@ fn main() -> ExitCode {
     };
 
     let result = match workload {
-        "parse-tiny" => run_parse(tiny_fixture(), iterations.unwrap_or(5_000_000)),
-        "parse-common" => run_parse(common_fixture(), iterations.unwrap_or(2_000_000)),
-        "parse-many-groups" => run_parse(many_groups_fixture(), iterations.unwrap_or(20_000)),
-        "parse-many-rules" => run_parse(many_rules_fixture(), iterations.unwrap_or(30_000)),
-        "parse-wildcard-heavy" => run_parse(wildcard_heavy_fixture(), iterations.unwrap_or(40_000)),
-        "parse-extension-heavy" => {
-            run_parse(extension_heavy_fixture(), iterations.unwrap_or(20_000))
+        "parse-tiny" => run_parse(&tiny_fixture(), iterations.unwrap_or(5_000_000)),
+        "parse-common" => run_parse(&common_fixture(), iterations.unwrap_or(2_000_000)),
+        "parse-many-groups" => run_parse(&many_groups_fixture(), iterations.unwrap_or(20_000)),
+        "parse-many-rules" => run_parse(&many_rules_fixture(), iterations.unwrap_or(30_000)),
+        "parse-wildcard-heavy" => {
+            run_parse(&wildcard_heavy_fixture(), iterations.unwrap_or(40_000))
         }
-        "parse-large" => run_parse(large_500k_fixture(), iterations.unwrap_or(2_000)),
-        "match-many-rules" => run_match(many_rules_fixture(), iterations.unwrap_or(300_000)),
+        "parse-extension-heavy" => {
+            run_parse(&extension_heavy_fixture(), iterations.unwrap_or(20_000))
+        }
+        "parse-large" => run_parse(&large_500k_fixture(), iterations.unwrap_or(2_000)),
+        "match-many-rules" => run_match(&many_rules_fixture(), iterations.unwrap_or(300_000)),
         "match-wildcard-heavy" => {
-            run_match(wildcard_heavy_fixture(), iterations.unwrap_or(200_000))
+            run_match(&wildcard_heavy_fixture(), iterations.unwrap_or(200_000))
         }
         "match-compiled-many-rules" => {
-            run_compiled_match(many_rules_fixture(), iterations.unwrap_or(300_000))
+            run_compiled_match(&many_rules_fixture(), iterations.unwrap_or(300_000))
         }
         "match-compiled-wildcard-heavy" => {
-            run_compiled_match(wildcard_heavy_fixture(), iterations.unwrap_or(200_000))
+            run_compiled_match(&wildcard_heavy_fixture(), iterations.unwrap_or(200_000))
         }
         "matcher-build-many-rules" => {
-            run_matcher_build(many_rules_fixture(), iterations.unwrap_or(50_000))
+            run_matcher_build(&many_rules_fixture(), iterations.unwrap_or(50_000))
         }
         "matcher-build-wildcard-heavy" => {
-            run_matcher_build(wildcard_heavy_fixture(), iterations.unwrap_or(50_000))
+            run_matcher_build(&wildcard_heavy_fixture(), iterations.unwrap_or(50_000))
         }
-        "parse-match-common" => run_parse_match(common_fixture(), iterations.unwrap_or(1_000_000)),
-        "parse-match-large" => run_parse_match(large_500k_fixture(), iterations.unwrap_or(2_000)),
+        "parse-match-common" => run_parse_match(&common_fixture(), iterations.unwrap_or(1_000_000)),
+        "parse-match-large" => run_parse_match(&large_500k_fixture(), iterations.unwrap_or(2_000)),
         _ => {
             print_usage(&args[0]);
             return ExitCode::from(2);
@@ -84,17 +86,17 @@ fn print_usage(program: &str) {
     }
 }
 
-fn run_parse(input: String, iterations: usize) -> usize {
+fn run_parse(input: &str, iterations: usize) -> usize {
     let mut total = 0;
     for _ in 0..iterations {
-        let robots = RobotsTxt::parse(black_box(input.as_str()));
+        let robots = RobotsTxt::parse(black_box(input));
         total += black_box(robots.groups.len());
     }
     total
 }
 
-fn run_match(input: String, iterations: usize) -> usize {
-    let robots = RobotsTxt::parse(&input);
+fn run_match(input: &str, iterations: usize) -> usize {
+    let robots = RobotsTxt::parse(input);
     let queries = vec![
         ("ExampleBot", "/private/0/page.html"),
         ("ExampleBot", "/private/10/public/file.html"),
@@ -115,8 +117,8 @@ fn run_match(input: String, iterations: usize) -> usize {
     total
 }
 
-fn run_compiled_match(input: String, iterations: usize) -> usize {
-    let robots = RobotsTxt::parse(&input);
+fn run_compiled_match(input: &str, iterations: usize) -> usize {
+    let robots = RobotsTxt::parse(input);
     let matcher = robots.matcher();
     let queries = vec![
         ("ExampleBot", "/private/0/page.html"),
@@ -138,8 +140,8 @@ fn run_compiled_match(input: String, iterations: usize) -> usize {
     total
 }
 
-fn run_matcher_build(input: String, iterations: usize) -> usize {
-    let robots = RobotsTxt::parse(&input);
+fn run_matcher_build(input: &str, iterations: usize) -> usize {
+    let robots = RobotsTxt::parse(input);
     let mut total = 0;
 
     for _ in 0..iterations {
@@ -150,10 +152,10 @@ fn run_matcher_build(input: String, iterations: usize) -> usize {
     total
 }
 
-fn run_parse_match(input: String, iterations: usize) -> usize {
+fn run_parse_match(input: &str, iterations: usize) -> usize {
     let mut total = 0;
     for _ in 0..iterations {
-        let robots = RobotsTxt::parse(black_box(input.as_str()));
+        let robots = RobotsTxt::parse(black_box(input));
         total += usize::from(black_box(
             robots.is_allowed(black_box("ExampleBot"), black_box("/private/10/page.html")),
         ));
@@ -166,7 +168,7 @@ fn tiny_fixture() -> String {
 }
 
 fn common_fixture() -> String {
-    r#"
+    r"
 # Common robots.txt shape.
 Sitemap: https://example.com/sitemap.xml
 User-agent: *
@@ -182,7 +184,7 @@ Crawl-delay: 5
 User-agent: ImageBot
 Disallow: /*.gif$
 Allow: /public/*.gif$
-"#
+"
     .to_owned()
 }
 
@@ -191,9 +193,11 @@ fn many_groups_fixture() -> String {
     input.push_str("Sitemap: https://example.com/sitemap.xml\n");
 
     for index in 0..1_000 {
-        input.push_str(&format!(
+        write!(
+            input,
             "User-agent: Bot{index}\nDisallow: /bot/{index}/private/\nAllow: /bot/{index}/private/public/\n\n"
-        ));
+        )
+        .expect("writing to String cannot fail");
     }
 
     input.push_str("User-agent: *\nDisallow: /fallback/blocked\n");
@@ -205,9 +209,10 @@ fn many_rules_fixture() -> String {
     input.push_str("User-agent: ExampleBot\n");
 
     for index in 0..2_000 {
-        input.push_str(&format!("Disallow: /private/{index}/\n"));
+        writeln!(input, "Disallow: /private/{index}/").expect("writing to String cannot fail");
         if index % 4 == 0 {
-            input.push_str(&format!("Allow: /private/{index}/public/\n"));
+            writeln!(input, "Allow: /private/{index}/public/")
+                .expect("writing to String cannot fail");
         }
     }
 
@@ -220,9 +225,11 @@ fn wildcard_heavy_fixture() -> String {
     input.push_str("User-agent: ExampleBot\n");
 
     for index in 0..1_000 {
-        input.push_str(&format!(
+        write!(
+            input,
             "Disallow: /assets/{index}/*/private/*.gif$\nAllow: /assets/{index}/public/*.gif$\n"
-        ));
+        )
+        .expect("writing to String cannot fail");
     }
 
     input.push_str("Disallow: /assets/*/private/*.gif$\nAllow: /assets/public/*.gif$\n");
@@ -233,18 +240,22 @@ fn extension_heavy_fixture() -> String {
     let mut input = String::new();
 
     for index in 0..1_000 {
-        input.push_str(&format!(
+        write!(
+            input,
             "Sitemap: https://cdn{index}.example.com/sitemap.xml\nX-Meta-{index}: value-{index}\n"
-        ));
+        )
+        .expect("writing to String cannot fail");
     }
 
     input.push_str("User-agent: ExampleBot\n");
     for index in 0..500 {
-        input.push_str(&format!(
+        write!(
+            input,
             "Crawl-delay: {}\nClean-param: ref{} /shop\nHost: example.com\nDisallow: /ext/{index}/\n",
             (index % 20) + 1,
             index
-        ));
+        )
+        .expect("writing to String cannot fail");
     }
 
     input
@@ -256,10 +267,12 @@ fn large_500k_fixture() -> String {
 
     let mut index = 0;
     while input.len() < 512 * 1024 {
-        input.push_str(&format!(
+        write!(
+            input,
             "User-agent: Bot{index}\nDisallow: /private/{index}/\nAllow: /private/{index}/public/\nCrawl-delay: {}\nX-Trace: value-{index}\n\n",
             (index % 20) + 1
-        ));
+        )
+        .expect("writing to String cannot fail");
         index += 1;
     }
 
